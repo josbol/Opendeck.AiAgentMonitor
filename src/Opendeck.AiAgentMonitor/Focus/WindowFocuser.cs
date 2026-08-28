@@ -150,16 +150,10 @@ public static class WindowFocuser
 
     private static Win? Pick(AgentInfo agent, List<Win> windows)
     {
-        var project = agent.ProjectName;
-        int Score(Win w)
-        {
-            var t = w.Title;
-            if (project.Length == 0) return 0;
-            if (t.StartsWith("Terminal - " + project, StringComparison.OrdinalIgnoreCase)) return 3;   // detached IDE terminal window
-            if (t.Contains(project, StringComparison.OrdinalIgnoreCase)) return 2;
-            return 0;
-        }
-        Win? Best(IEnumerable<Win> ws) => ws.OrderByDescending(Score).ThenBy(w => w.Title.Length).FirstOrDefault();
+        var names = ProjectNames(agent.Cwd);
+        int Score(Win w) => ScoreTitle(w.Title, names, agent.Provider);
+        // highest score; among equals prefer a detached tool window ("Terminal - Project") over a main window, then the shorter title
+        Win? Best(IEnumerable<Win> ws) => ws.OrderByDescending(Score).ThenByDescending(w => w.Title.Contains(" - ", StringComparison.Ordinal) ? 1 : 0).ThenBy(w => w.Title.Length).FirstOrDefault();
 
         // 1. Walk the process ancestry of the agent process (Claude: registry pid; Codex: lock owner) and match windows by _NET_WM_PID.
         if (agent.Pid is { } pid)
@@ -180,6 +174,74 @@ public static class WindowFocuser
         }
         // 3. Title match anywhere.
         return windows.Where(w => Score(w) > 0).OrderByDescending(Score).FirstOrDefault();
+    }
+
+    /// <summary>
+    /// How well a window title matches the agent's project. JetBrains IDEs title the main window "Project" or
+    /// "Project – file" and detached tool windows "Terminal - Project"; the session lives in the terminal, so that
+    /// wins for Claude. Names come from <see cref="ProjectNames"/> (directory, .idea, .sln, git root).
+    /// </summary>
+    internal static int ScoreTitle(string title, IReadOnlyList<string> names, Provider provider)
+    {
+        const StringComparison cmp = StringComparison.OrdinalIgnoreCase;
+        var best = 0;
+        var sep = title.IndexOf(" - ", StringComparison.Ordinal);
+        var tool = sep > 0 ? title[..sep] : null;
+        var toolProject = sep > 0 ? title[(sep + 3)..] : null;
+        foreach (var name in names)
+        {
+            if (name.Length == 0) continue;
+            int s;
+            if (toolProject is not null && toolProject.Equals(name, cmp))
+                s = provider == Provider.Claude && tool!.Equals("Terminal", cmp) ? 40 : 30;      // detached tool window of this project
+            else if (title.Equals(name, cmp) || title.StartsWith(name + " ", cmp) || title.StartsWith(name + "–", cmp))
+                s = 20;                                                                          // main IDE window
+            else if (title.Contains(name, cmp))
+                s = 10;
+            else s = 0;
+            best = Math.Max(best, s);
+        }
+        return best;
+    }
+
+    private static readonly Dictionary<string, (DateTime At, List<string> Names)> NameCache = new();
+
+    /// <summary>Names a window title may carry for a working directory: its basename, the JetBrains project name
+    /// (.idea/.idea.&lt;Name&gt; or .idea/.name), solution names (*.sln, *.slnx) and the git root's basename, searched upwards.</summary>
+    internal static List<string> ProjectNames(string cwd)
+    {
+        if (string.IsNullOrEmpty(cwd)) return new List<string>();
+        lock (NameCache)
+            if (NameCache.TryGetValue(cwd, out var cached) && (DateTime.UtcNow - cached.At).TotalSeconds < 60) return cached.Names;
+
+        var names = new List<string>();
+        void Add(string? n)
+        {
+            n = n?.Trim();
+            if (!string.IsNullOrEmpty(n) && !names.Contains(n, StringComparer.OrdinalIgnoreCase)) names.Add(n);
+        }
+        Add(Path.GetFileName(cwd.TrimEnd('/')));
+        var dir = cwd.TrimEnd('/');
+        for (var depth = 0; depth < 4 && !string.IsNullOrEmpty(dir); depth++)
+        {
+            try
+            {
+                var idea = Path.Combine(dir, ".idea");
+                if (Directory.Exists(idea))
+                {
+                    foreach (var d in Directory.EnumerateDirectories(idea, ".idea.*")) Add(Path.GetFileName(d)[6..]);
+                    var nameFile = Path.Combine(idea, ".name");
+                    if (File.Exists(nameFile)) Add(File.ReadAllText(nameFile));
+                }
+                foreach (var f in Directory.EnumerateFiles(dir, "*.sln")) Add(Path.GetFileNameWithoutExtension(f));
+                foreach (var f in Directory.EnumerateFiles(dir, "*.slnx")) Add(Path.GetFileNameWithoutExtension(f));
+                if (Directory.Exists(Path.Combine(dir, ".git")) || File.Exists(Path.Combine(dir, ".git"))) Add(Path.GetFileName(dir));
+            }
+            catch { /* unreadable directory: ignore */ }
+            dir = Path.GetDirectoryName(dir) ?? "";
+        }
+        lock (NameCache) NameCache[cwd] = (DateTime.UtcNow, names);
+        return names;
     }
 
     private static async Task<List<Win>> ListWindowsAsync()

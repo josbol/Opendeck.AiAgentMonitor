@@ -6,23 +6,23 @@ namespace Opendeck.AiAgentMonitor.Tests;
 
 public class WindowMatchingTests
 {
-    private static readonly string[] Names = { "api", "PortalDocenteAPI" };
+    private static readonly string[] Names = { "api", "AcmeShopAPI" };
 
     [Theory]
-    [InlineData("Terminal - PortalDocenteAPI", 40)]                          // detached terminal of this project → best for Claude
-    [InlineData("PortalDocenteAPI", 20)]                                     // main IDE window
-    [InlineData("PortalDocenteAPI – ~/source/portaldocente/api/README.md", 20)]
+    [InlineData("Terminal - AcmeShopAPI", 40)]                          // detached terminal of this project → best for Claude
+    [InlineData("AcmeShopAPI", 20)]                                     // main IDE window
+    [InlineData("AcmeShopAPI – ~/source/acme/api/README.md", 20)]
     [InlineData("Terminal - Other", 0)]
     [InlineData("Some window mentioning api", 10)]
-    [InlineData("Codex - PortalDocenteAPI", 30)]                             // another detached tool window
+    [InlineData("Codex - AcmeShopAPI", 30)]                             // another detached tool window
     public void ScoresIdeWindowTitles(string title, int expected)
         => Assert.Equal(expected, WindowFocuser.ScoreTitle(title, Names, Provider.Claude));
 
     [Fact]
     public void DetachedTerminalBeatsMainWindowEvenWhenDirectoryNameDiffers()
     {
-        var main = WindowFocuser.ScoreTitle("PortalDocenteAPI", Names, Provider.Claude);
-        var terminal = WindowFocuser.ScoreTitle("Terminal - PortalDocenteAPI", Names, Provider.Claude);
+        var main = WindowFocuser.ScoreTitle("AcmeShopAPI", Names, Provider.Claude);
+        var terminal = WindowFocuser.ScoreTitle("Terminal - AcmeShopAPI", Names, Provider.Claude);
         Assert.True(terminal > main);
     }
 
@@ -33,13 +33,13 @@ public class WindowMatchingTests
         var cwd = Path.Combine(root, "src", "api");
         Directory.CreateDirectory(cwd);
         Directory.CreateDirectory(Path.Combine(root, ".git"));
-        Directory.CreateDirectory(Path.Combine(cwd, ".idea", ".idea.PortalDocenteAPI"));
+        Directory.CreateDirectory(Path.Combine(cwd, ".idea", ".idea.AcmeShopAPI"));
         File.WriteAllText(Path.Combine(cwd, "Portal.sln"), "");
         try
         {
             var names = WindowFocuser.ProjectNames(cwd);
             Assert.Equal("api", names[0]);
-            Assert.Contains("PortalDocenteAPI", names);
+            Assert.Contains("AcmeShopAPI", names);
             Assert.Contains("Portal", names);
             Assert.Contains(Path.GetFileName(root), names);
         }

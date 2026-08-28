@@ -10,7 +10,7 @@ python3 - "$TMP" "$ROOT/docs/keys.png" <<'PY'
 import sys, os
 from PIL import Image
 src, out = sys.argv[1], sys.argv[2]
-order = ["sample-working", "sample-waiting", "sample-idle", "sample-agent-approval", "sample-quota", "quota-codex",
+order = ["sample-working", "sample-waiting", "sample-idle", "sample-agent-approval", "sample-quota", "sample-quota-codex",
          "sample-overview", "sample-attention", "sample-approve", "sample-deny", "sample-selected-approval", "empty-slot"]
 files = [os.path.join(src, n + ".png") for n in order if os.path.exists(os.path.join(src, n + ".png"))]
 cols = 6; rows = (len(files) + cols - 1) // cols; cell = 150

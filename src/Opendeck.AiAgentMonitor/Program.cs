@@ -40,15 +40,16 @@ if (args.Length > 0 && args[0].StartsWith("--"))
             for (var i = 0; i < ordered.Count; i++) { Save($"agent-{i + 1}", r.AgentKey(ordered[i], now)); Save($"selected-{i + 1}", r.AgentKey(ordered[i], now, i + 1, ordered.Count)); }
             Save("empty-slot", r.EmptySlot(3, null));
             // synthetic samples so every state can be eyeballed
-            var sample = new AgentInfo { Key = "x", Provider = Provider.Claude, Name = "demo", Cwd = "/home/x/source/PortalDocente.API", Host = "Rider", State = AgentState.Waiting, StateSince = now.AddMinutes(-3), LastActivity = now, StartedAt = now.AddHours(-1), Model = "claude-fable-5", ContextPct = 37, Detail = "permission prompt", SubAgents = 2 };
+            var sample = new AgentInfo { Key = "x", Provider = Provider.Claude, Name = "demo", Cwd = "/home/dev/source/AcmeShop.API", Host = "Rider", State = AgentState.Waiting, StateSince = now.AddMinutes(-3), LastActivity = now, StartedAt = now.AddHours(-1), Model = "claude-fable-5", ContextPct = 37, Detail = "permission prompt", SubAgents = 2 };
             Save("sample-waiting", r.AgentKey(sample, now));
             Save("sample-working", r.AgentKey(sample with { Provider = Provider.Codex, State = AgentState.Working, Detail = null, Model = "gpt-5.6-sol", Host = "App", ContextPct = 82 }, now));
             Save("sample-idle", r.AgentKey(sample with { State = AgentState.Idle, Detail = null, Host = "Term", ContextPct = 95 }, now));
             var q = new ProviderQuota { Provider = Provider.Claude, FetchedAt = now, Plan = "max", Windows = new[] { new QuotaWindow("5h", 36, now.AddHours(2.3)), new QuotaWindow("7d", 67, now.AddDays(1)) } };
             Save("sample-quota", r.QuotaKey(Provider.Claude, q, now));
+            Save("sample-quota-codex", r.QuotaKey(Provider.Codex, new ProviderQuota { Provider = Provider.Codex, FetchedAt = now, Plan = "pro", Windows = new[] { new QuotaWindow("5h", 12, now.AddHours(3.1)), new QuotaWindow("7d", 58, now.AddDays(4)) } }, now));
             var snap = new Snapshot { Agents = new[] { sample, sample with { Key = "y", State = AgentState.Working }, sample with { Key = "z", Provider = Provider.Codex, State = AgentState.Idle } }, At = now, Claude = q };
             Save("sample-overview", r.OverviewKey(snap, now));
-            var reqInput = JsonDocument.Parse("{\"command\":\"git push origin main --force-with-lease && dotnet test tests/VH.Olho.Core.Tests --no-build\",\"description\":\"Push and run the core tests\"}").RootElement.Clone();
+            var reqInput = JsonDocument.Parse("{\"command\":\"git push origin main --force-with-lease && dotnet test tests/AcmeShop.Core.Tests --no-build\",\"description\":\"Push and run the core tests\"}").RootElement.Clone();
             var req = new PendingApproval { Id = "t1", Provider = Provider.Claude, AgentKey = "x", SessionId = "x", Cwd = sample.Cwd, ToolName = "Bash", ToolInput = reqInput, Summary = PendingApproval.Summarize("Bash", reqInput) };
             Save("sample-approve", r.DecisionKey(req, sample, true, 1, now));
             Save("sample-deny", r.DecisionKey(req, sample, false, 0, now));

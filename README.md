@@ -17,11 +17,23 @@ Shows what your AI coding agents are doing on a stream deck (built for the Ulanz
   key turns amber with **APPROVE?** and the tool call (e.g. `Bash: git push origin main`), the selection jumps to it,
   and the Approve/Deny keys (also the two side buttons) answer it. Pressing the agent key, the dial or the Selected
   agent key instead hands the request back to the terminal (its normal dialog appears) and focuses the window.
+  Because the app's own prompt is not rendered while the hook holds the request, the full request text is also shown
+  as a **desktop notification with Approve / Deny buttons** (KDE/libnotify) and wrapped on the selected-agent and
+  Approve/Deny keys.
+
+**Scope**: Linux only. Tested with OpenDeck 2.14 on KDE Plasma 6 / X11 with an Ulanzi D200X (through the
+[opendeck-ulanzi-d200x](https://github.com/edubox/opendeck-ulanzi-d200x) device plugin). Window focusing uses
+`wmctrl`/`xdotool` with a KWin fallback, so it needs X11 (Wayland sessions get everything except focusing); the
+profile generator targets the D200X layout — on other decks place the actions by hand. It relies on undocumented
+internals of Claude Code (session registry, transcripts, usage endpoint) and Codex (rollouts, lock files, usage
+endpoint), so a release of either tool can break a collector; the diagnostics below exist for exactly that.
 
 Everything is read locally; nothing is sent anywhere except the two usage requests that Claude Code
 and Codex already make themselves (`api.anthropic.com/api/oauth/usage`, `chatgpt.com/backend-api/wham/usage`),
 using the tokens they store. Monitoring needs no hooks; approving from the deck needs one `PermissionRequest`
 hook per tool (installed by `--install-hooks`, see below).
+
+![Keys rendered by the plugin](docs/keys.png)
 
 ## How it knows
 
@@ -40,16 +52,21 @@ hook per tool (installed by `--install-hooks`, see below).
 
 ## Build & install
 
-Requirements: .NET 10 SDK, `wmctrl` (window focusing), OpenDeck ≥ 2.x with **developer mode** on if you
-install as a symlink.
+**From a release**: download `com.josbol.aiagentmonitor.sdPlugin-<version>.zip` from the GitHub releases page and
+use OpenDeck → Plugins → *Install from file* (contains self-contained x64 and arm64 binaries; no .NET needed). Then
+run the two scripts below for the profile and the hooks (they are also in the zip).
+
+**From source**: .NET 10 SDK, `wmctrl` + `xdotool` (window focusing), `notify-send` (libnotify, optional),
+OpenDeck ≥ 2.x with **developer mode** on if you install as a symlink.
 
 ```sh
-./scripts/build.sh              # dotnet publish → plugin/com.josbol.aiagentmonitor.sdPlugin/bin (self-contained)
+./scripts/build.sh              # dotnet publish → plugin/com.josbol.aiagentmonitor.sdPlugin/bin/linux-x64 (RIDS="linux-x64 linux-arm64" for both)
+./scripts/package.sh            # both architectures → dist/com.josbol.aiagentmonitor.sdPlugin-<version>.zip
 ./scripts/install.sh --link     # symlink into ~/.config/opendeck/plugins (or plain ./scripts/install.sh to copy)
 ./scripts/install-profile.py    # creates the "AI Agents" profile for the Ulanzi D200X
 ./scripts/install-profile.py --main-key 4   # …and puts an "Attention → Monitor" key on slot 4 of "Default" (restart OpenDeck)
-plugin/com.josbol.aiagentmonitor.sdPlugin/bin/opendeck-aiagentmonitor --install-hooks     # Claude + Codex PermissionRequest hooks
-plugin/com.josbol.aiagentmonitor.sdPlugin/bin/opendeck-aiagentmonitor --uninstall-hooks
+plugin/com.josbol.aiagentmonitor.sdPlugin/bin/linux-x64/opendeck-aiagentmonitor --install-hooks     # Claude + Codex PermissionRequest hooks
+plugin/com.josbol.aiagentmonitor.sdPlugin/bin/linux-x64/opendeck-aiagentmonitor --uninstall-hooks
 ```
 
 `--install-hooks` adds an `http` hook to `~/.claude/settings.json` and a `command` hook to `~/.codex/hooks.json`
@@ -83,11 +100,12 @@ The wide screen only shows the Overview when the D200X plugin's *Wide screen* mo
 ## Diagnostics
 
 ```sh
-plugin/com.josbol.aiagentmonitor.sdPlugin/bin/opendeck-aiagentmonitor --dump          # snapshot as JSON
-plugin/com.josbol.aiagentmonitor.sdPlugin/bin/opendeck-aiagentmonitor --render out/   # PNGs of every key
-plugin/com.josbol.aiagentmonitor.sdPlugin/bin/opendeck-aiagentmonitor --focus --dry   # which window each agent maps to
-plugin/com.josbol.aiagentmonitor.sdPlugin/bin/opendeck-aiagentmonitor --activate 0x02a00003   # run the focus sequence on a window id
+plugin/com.josbol.aiagentmonitor.sdPlugin/bin/linux-x64/opendeck-aiagentmonitor --dump          # snapshot as JSON
+plugin/com.josbol.aiagentmonitor.sdPlugin/bin/linux-x64/opendeck-aiagentmonitor --render out/   # PNGs of every key
+plugin/com.josbol.aiagentmonitor.sdPlugin/bin/linux-x64/opendeck-aiagentmonitor --focus --dry   # which window each agent maps to
+plugin/com.josbol.aiagentmonitor.sdPlugin/bin/linux-x64/opendeck-aiagentmonitor --activate 0x02a00003   # run the focus sequence on a window id
 AIAGENTMONITOR_DEBUG=1  …                                                             # verbose event log
+dotnet test                                                                           # unit tests for the parsers / hash / ordering
 ```
 
 Plugin log: `~/.local/share/opendeck/logs/plugins/com.josbol.aiagentmonitor.sdPlugin.log`.
@@ -104,7 +122,7 @@ Plugin-wide (any property inspector → *Plugin-wide settings*): monitor/main pr
 interval (default 180 s), online usage fetch on/off, Codex idle timeout (default 120 min), Claude context
 window (auto = 1M when `~/.claude/settings.json` uses a `[1m]` model, else 200k), clock refresh; approval hold
 time (how long a permission request waits for the deck before the terminal dialog appears), *only when window
-unfocused* (skip the hold when you are already looking at the agent's window), hook port.
+unfocused* (skip the hold when you are already looking at the agent's window), desktop notification on/off, hook port.
 
 ## Layout of the code
 
@@ -116,7 +134,9 @@ src/Opendeck.AiAgentMonitor/
   Actions/     PluginHost (event routing, rendering, profile switch), one class per action
   Rendering/   KeyRenderer (SkiaSharp, 144×144 PNG data URLs)
   Focus/       WindowFocuser (wmctrl / xdotool)
-  Hooks/       HookServer (HttpListener; holds PermissionRequests), HookInstaller (settings.json / hooks.json)
+  Hooks/       HookServer (HttpListener; holds PermissionRequests), HookInstaller (settings.json / hooks.json / trust), ApprovalNotifier (notify-send)
 plugin/com.josbol.aiagentmonitor.sdPlugin/   manifest, icons, property inspectors, fonts, hooks/codex-hook.sh (+ bin/ after build)
-scripts/     build.sh, install.sh, install-profile.py
+tests/Opendeck.AiAgentMonitor.Tests/           xunit tests (usage parsing, rollout rate limits, approvals, Codex trust hash, deck events)
+scripts/     build.sh, package.sh, install.sh, install-profile.py
+.github/     CI (build + test) and release (tag v* → zip attached to the GitHub release)
 ```

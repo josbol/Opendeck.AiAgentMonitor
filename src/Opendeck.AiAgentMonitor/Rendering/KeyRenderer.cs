@@ -34,7 +34,7 @@ public sealed class KeyRenderer
     private static (SKTypeface, SKTypeface) LoadFonts()
     {
         var baseDir = AppContext.BaseDirectory;
-        foreach (var dir in new[] { Path.Combine(baseDir, "fonts"), Path.Combine(baseDir, "..", "assets", "fonts"), Path.Combine(baseDir, "assets", "fonts") })
+        foreach (var dir in new[] { Path.Combine(baseDir, "fonts"), Path.Combine(baseDir, "..", "..", "assets", "fonts"), Path.Combine(baseDir, "..", "assets", "fonts"), Path.Combine(baseDir, "assets", "fonts") })
         {
             var r = Path.Combine(dir, "DejaVuSans.ttf"); var b = Path.Combine(dir, "DejaVuSans-Bold.ttf");
             if (File.Exists(r) && File.Exists(b))
@@ -68,10 +68,10 @@ public sealed class KeyRenderer
         var right = index is not null && total is not null ? $"{index}/{total}" : a.Host;
         DrawText(c, right, Size - 8, 17, 10, bandText, align: SKTextAlign.Right);
 
-        // name
+        // name (+ session title in the selected view, unless a request needs the room)
         DrawFitted(c, a.ProjectName, Size / 2f, 56, 17, Text, bold: true, maxWidth: Size - 16);
-        if (a.Title is not null && index is not null)
-            DrawFitted(c, a.Title, Size / 2f, 72, 10, Muted, maxWidth: Size - 16);
+        var showTitle = a.Title is not null && index is not null && a.Approval is null;
+        if (showTitle) DrawFitted(c, a.Title!, Size / 2f, 72, 10, Muted, maxWidth: Size - 16);
 
         // status line
         var since = Elapsed(now - a.StateSince);
@@ -83,11 +83,16 @@ public sealed class KeyRenderer
             AgentState.Idle => ($"idle {since}", Muted),
             _ => ("ended", Ended),
         };
-        DrawText(c, word, Size / 2f, a.Title is not null && index is not null ? 92 : 84, a.State == AgentState.Waiting ? 16 : 13, wordColor, bold: a.State == AgentState.Waiting, align: SKTextAlign.Center);
+        DrawText(c, word, Size / 2f, showTitle ? 92 : 84, a.State == AgentState.Waiting ? 16 : 13, wordColor, bold: a.State == AgentState.Waiting, align: SKTextAlign.Center);
 
         // detail
         var detail = a.Detail;
-        if (a.State == AgentState.Waiting && detail is not null) DrawFitted(c, $"{detail} · {since}", Size / 2f, 106, 10, Waiting, maxWidth: Size - 16);
+        if (a.Approval is { } req)
+        {
+            // the full request, wrapped: the app's own prompt is not visible while the hook holds it
+            DrawWrapped(c, Hooks.ApprovalNotifier.FullText(req).Replace(":\n", ": "), 8, 96, 9, Waiting, Size - 16, index is not null ? 3 : 2);
+        }
+        else if (a.State == AgentState.Waiting && detail is not null) DrawFitted(c, $"{detail} · {since}", Size / 2f, 106, 10, Waiting, maxWidth: Size - 16);
         else if (detail is not null) DrawFitted(c, detail, Size / 2f, 100, 10, Muted, maxWidth: Size - 16);
         else if (index is null && a.Host.Length > 0 && a.SubAgents > 0) DrawText(c, $"+{a.SubAgents} sub", Size / 2f, 100, 10, Muted, align: SKTextAlign.Center);
         else if (index is not null) DrawText(c, a.Host + (a.SubAgents > 0 ? $" · +{a.SubAgents} sub" : ""), Size / 2f, 106, 10, Muted, align: SKTextAlign.Center);
@@ -234,10 +239,10 @@ public sealed class KeyRenderer
         DrawText(c, glyph, Size / 2f, 58, 40, color, bold: true, align: SKTextAlign.Center);
         DrawText(c, allow ? "APPROVE" : "DENY", Size / 2f, 78, 14, Text, bold: true, align: SKTextAlign.Center);
         var who = agent?.ProjectName ?? System.IO.Path.GetFileName(p.Cwd.TrimEnd('/'));
-        DrawFitted(c, $"{(p.Provider == Provider.Claude ? "Claude" : "Codex")} · {who}", Size / 2f, 98, 10, Muted, maxWidth: Size - 16);
-        DrawFitted(c, p.Summary, Size / 2f, 114, 10, Text, maxWidth: Size - 16);
+        DrawFitted(c, $"{(p.Provider == Provider.Claude ? "Claude" : "Codex")} · {who}", Size / 2f, 94, 10, Muted, maxWidth: Size - 16);
+        DrawWrapped(c, Hooks.ApprovalNotifier.FullText(p).Replace(":\n", ": "), 8, 108, 9, Text, Size - 16, 2);
         var foot = KeyRenderer.Elapsed(now - p.ReceivedAt) + (more > 0 ? $"  ·  +{more} more" : "");
-        DrawText(c, foot, Size / 2f, 132, 9, Muted, align: SKTextAlign.Center);
+        DrawText(c, foot, Size / 2f, 136, 9, Muted, align: SKTextAlign.Center);
         return Encode(s);
     }
 
@@ -303,6 +308,43 @@ public sealed class KeyRenderer
         if (t.Length < text.Length) t = t.TrimEnd() + "…";
         using var paint = new SKPaint { Color = color, IsAntialias = true };
         c.DrawText(t, cx, y, SKTextAlign.Center, font, paint);
+    }
+
+    /// <summary>Left-aligned word-wrapped text; the last allowed line gets an ellipsis when text remains.</summary>
+    private void DrawWrapped(SKCanvas c, string text, float x, float top, float size, SKColor color, float maxWidth, int maxLines)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return;
+        using var font = new SKFont(_regular, size) { Subpixel = true, Edging = SKFontEdging.SubpixelAntialias };
+        using var paint = new SKPaint { Color = color, IsAntialias = true };
+        var words = text.Replace("\r", "").Replace('\n', ' ').Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var lines = new List<string>(); var cur = "";
+        foreach (var w in words)
+        {
+            if (lines.Count > maxLines) break;   // enough to know it overflows
+            var candidate = cur.Length == 0 ? w : cur + " " + w;
+            if (font.MeasureText(candidate) <= maxWidth) { cur = candidate; continue; }
+            if (cur.Length > 0) { lines.Add(cur); cur = ""; }
+            // a single word longer than the line: hard-break it
+            var piece = w;
+            while (font.MeasureText(piece) > maxWidth && piece.Length > 1)
+            {
+                var cut = piece.Length;
+                while (cut > 1 && font.MeasureText(piece[..cut]) > maxWidth) cut--;
+                lines.Add(piece[..cut]); piece = piece[cut..];
+            }
+            cur = piece;
+        }
+        if (cur.Length > 0) lines.Add(cur);
+        var truncated = lines.Count > maxLines;
+        if (truncated) lines = lines.Take(maxLines).ToList();
+        if (truncated && lines.Count > 0)
+        {
+            var last = lines[^1];
+            while (last.Length > 1 && font.MeasureText(last + "…") > maxWidth) last = last[..^1];
+            lines[^1] = last + "…";
+        }
+        var lineHeight = size * 1.25f;
+        for (var i = 0; i < lines.Count; i++) c.DrawText(lines[i], x, top + i * lineHeight, SKTextAlign.Left, font, paint);
     }
 
     public static string Elapsed(TimeSpan t)

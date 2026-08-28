@@ -59,6 +59,7 @@ function render() {
   bind("g-hookPort", "hookPort", { global: true, num: true, def: 43117 });
   bind("g-approvalHoldSeconds", "approvalHoldSeconds", { global: true, num: true, def: 30 });
   bind("g-holdOnlyWhenUnfocused", "holdOnlyWhenUnfocused", { global: true, def: false });
+  bind("g-notifyOnApproval", "notifyOnApproval", { global: true, def: true });
   const status = document.getElementById("status");
   if (status && window.lastSnapshot) {
     const s = window.lastSnapshot;

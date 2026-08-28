@@ -12,13 +12,14 @@
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <RuntimeIdentifiers>linux-x64;linux-arm64</RuntimeIdentifiers>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
-    <!-- publish settings: self-contained single file so the plugin folder is drop-in -->
-    <SelfContained>true</SelfContained>
-    <PublishSingleFile>true</PublishSingleFile>
-    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <!-- scripts/build.sh publishes self-contained single-file binaries per RID; keeping those flags out of the
+         project file lets the test project reference this one normally -->
     <DebugType>embedded</DebugType>
   </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Opendeck.AiAgentMonitor.Tests" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="SkiaSharp" Version="4.151.1" />

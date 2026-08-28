@@ -23,7 +23,12 @@ public static class HookInstaller
     /// <summary>Absolute path of hooks/codex-hook.sh next to the plugin binary (symlinks resolved).</summary>
     public static string CodexHookScript()
     {
-        var candidates = new[] { Path.Combine(AppContext.BaseDirectory, "..", "hooks", "codex-hook.sh"), Path.Combine(AppContext.BaseDirectory, "hooks", "codex-hook.sh") };
+        var candidates = new[]
+        {
+            Path.Combine(AppContext.BaseDirectory, "..", "..", "hooks", "codex-hook.sh"),   // bin/<rid>/ → plugin root
+            Path.Combine(AppContext.BaseDirectory, "..", "hooks", "codex-hook.sh"),
+            Path.Combine(AppContext.BaseDirectory, "hooks", "codex-hook.sh"),
+        };
         foreach (var c in candidates) if (File.Exists(c)) return Path.GetFullPath(c);
         return Path.GetFullPath(candidates[0]);
     }
@@ -133,7 +138,8 @@ public static class HookInstaller
             ["command"] = handler["command"]?.GetValue<string>() ?? "",
         };
         if (handler["statusMessage"] is JsonNode sm) h["statusMessage"] = sm.GetValue<string>();
-        h["timeout"] = handler["timeout"] is JsonNode t ? t.GetValue<long>() : 600;
+        // the node may be int-, long- or JsonElement-backed depending on where the document came from
+        h["timeout"] = handler["timeout"] is JsonNode t && double.TryParse(t.ToJsonString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var secs) ? (long)secs : 600;
         h["type"] = "command";
         var identity = new JsonObject { ["event_name"] = eventKeyLabel, ["hooks"] = new JsonArray(h) };
         var json = identity.ToJsonString(new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping });

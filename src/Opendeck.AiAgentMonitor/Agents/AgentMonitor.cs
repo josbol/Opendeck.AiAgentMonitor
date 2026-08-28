@@ -190,6 +190,7 @@ public sealed record GlobalSettings
     public int HookPort { get; init; } = 43117;
     public int ApprovalHoldSeconds { get; init; } = 30;
     public bool HoldOnlyWhenUnfocused { get; init; } = false;
+    public bool NotifyOnApproval { get; init; } = true;
 
     public static GlobalSettings From(System.Text.Json.JsonElement e)
     {
@@ -207,6 +208,7 @@ public sealed record GlobalSettings
             HookPort = (int)(e.Long("hookPort") ?? d.HookPort),
             ApprovalHoldSeconds = (int)(e.Long("approvalHoldSeconds") ?? d.ApprovalHoldSeconds),
             HoldOnlyWhenUnfocused = e.Bool("holdOnlyWhenUnfocused") ?? d.HoldOnlyWhenUnfocused,
+            NotifyOnApproval = e.Bool("notifyOnApproval") ?? d.NotifyOnApproval,
         };
     }
 }

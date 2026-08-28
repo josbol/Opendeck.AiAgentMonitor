@@ -17,6 +17,7 @@ public sealed class PluginHost : IAsyncDisposable
     public AgentMonitor Monitor { get; }
     public KeyRenderer Renderer { get; } = new();
     public HookServer Hooks { get; }
+    public ApprovalNotifier Notifier { get; }
     public GlobalSettings Settings { get; private set; } = new();
 
     private readonly Dictionary<string, DeckAction> _actions = new();
@@ -51,6 +52,7 @@ public sealed class PluginHost : IAsyncDisposable
         };
         Hooks.Activity += () => Monitor.Poke();
         Hooks.Start(Settings.HookPort);
+        Notifier = new ApprovalNotifier(monitor.Approvals) { Enabled = Settings.NotifyOnApproval, HoldSeconds = () => Settings.ApprovalHoldSeconds };
         _ = Task.Run(TickLoopAsync);
     }
 
@@ -150,6 +152,7 @@ public sealed class PluginHost : IAsyncDisposable
                 Settings = GlobalSettings.From(e.Settings);
                 Monitor.ApplySettings(Settings);
                 if (Settings.HookPort != Hooks.Port) Log.Warn($"Hook port changed to {Settings.HookPort}; reload the plugin and re-run --install-hooks");
+                Notifier.Enabled = Settings.NotifyOnApproval;
                 Log.Info($"Global settings: {Json.Serialize(Settings)}");
                 RequestRender();
                 break;

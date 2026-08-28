@@ -2,4 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/Opendeck.AiAgentMonitor/Opendeck.AiAgentMonitor.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Opendeck.AiAgentMonitor.Tests/Opendeck.AiAgentMonitor.Tests.csproj" />
+  </Folder>
 </Solution>

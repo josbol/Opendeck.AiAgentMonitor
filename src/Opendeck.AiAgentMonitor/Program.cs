@@ -48,7 +48,8 @@ if (args.Length > 0 && args[0].StartsWith("--"))
             Save("sample-quota", r.QuotaKey(Provider.Claude, q, now));
             var snap = new Snapshot { Agents = new[] { sample, sample with { Key = "y", State = AgentState.Working }, sample with { Key = "z", Provider = Provider.Codex, State = AgentState.Idle } }, At = now, Claude = q };
             Save("sample-overview", r.OverviewKey(snap, now));
-            var req = new PendingApproval { Id = "t1", Provider = Provider.Claude, AgentKey = "x", SessionId = "x", Cwd = sample.Cwd, ToolName = "Bash", Summary = PendingApproval.Summarize("Bash", JsonDocument.Parse("{\"command\":\"git push origin main --force-with-lease\"}").RootElement) };
+            var reqInput = JsonDocument.Parse("{\"command\":\"git push origin main --force-with-lease && dotnet test tests/VH.Olho.Core.Tests --no-build\",\"description\":\"Push and run the core tests\"}").RootElement.Clone();
+            var req = new PendingApproval { Id = "t1", Provider = Provider.Claude, AgentKey = "x", SessionId = "x", Cwd = sample.Cwd, ToolName = "Bash", ToolInput = reqInput, Summary = PendingApproval.Summarize("Bash", reqInput) };
             Save("sample-approve", r.DecisionKey(req, sample, true, 1, now));
             Save("sample-deny", r.DecisionKey(req, sample, false, 0, now));
             Save("sample-approve-empty", r.DecisionKey(null, null, true, 0, now));

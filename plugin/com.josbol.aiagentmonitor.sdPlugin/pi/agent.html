@@ -16,6 +16,8 @@
 <div class="hint">How long a permission request waits for a deck press before the terminal shows its own dialog. Pressing the agent key / dial hands it to the terminal right away.</div>
 <div class="row"><label for="g-holdOnlyWhenUnfocused">Only when window unfocused</label><input type="checkbox" id="g-holdOnlyWhenUnfocused"></div>
 <div class="hint">Skip the hold when the agent's window is already the active window (you are probably looking at it).</div>
+<div class="row"><label for="g-notifyOnApproval">Desktop notification</label><input type="checkbox" id="g-notifyOnApproval"></div>
+<div class="hint">Shows the full request as a desktop notification with Approve / Deny buttons while it is held (the app's own prompt only appears after the hold).</div>
 <div class="row"><label for="g-hookPort">Hook port</label><input type="number" id="g-hookPort" min="1024" max="65535"></div>
 <div class="hint">Local port the Claude/Codex hooks post to. After changing it: reload the plugin and run <code>opendeck-aiagentmonitor --install-hooks</code> again.</div>
 <div class="row"><label for="g-tickSeconds">Clock refresh (s)</label><input type="number" id="g-tickSeconds" min="10" step="5"></div>

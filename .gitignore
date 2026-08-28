@@ -7,3 +7,4 @@ riderModule.iml
 plugin/*/bin/
 render-out/
 *.user
+dist/

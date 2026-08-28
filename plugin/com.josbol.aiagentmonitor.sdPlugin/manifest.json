@@ -7,11 +7,11 @@
 	"Category": "AI Agent Monitor",
 	"CategoryIcon": "icons/plugin",
 	"URL": "https://github.com/josbol/Opendeck.AiAgentMonitor",
-	"CodePath": "bin/opendeck-aiagentmonitor",
-	"CodePathLin": "bin/opendeck-aiagentmonitor",
+	"CodePath": "bin/linux-x64/opendeck-aiagentmonitor",
+	"CodePathLin": "bin/linux-x64/opendeck-aiagentmonitor",
 	"CodePaths": {
-		"x86_64-unknown-linux-gnu": "bin/opendeck-aiagentmonitor",
-		"aarch64-unknown-linux-gnu": "bin/opendeck-aiagentmonitor"
+		"x86_64-unknown-linux-gnu": "bin/linux-x64/opendeck-aiagentmonitor",
+		"aarch64-unknown-linux-gnu": "bin/linux-arm64/opendeck-aiagentmonitor"
 	},
 	"OS": [
 		{

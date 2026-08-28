@@ -191,6 +191,8 @@ public sealed record GlobalSettings
     public int ApprovalHoldSeconds { get; init; } = 30;
     public bool HoldOnlyWhenUnfocused { get; init; } = false;
     public bool NotifyOnApproval { get; init; } = true;
+    /// <summary>auto | dialog | notification | none — how a held permission request is shown on screen.</summary>
+    public string ApprovalPopup { get; init; } = "auto";
 
     public static GlobalSettings From(System.Text.Json.JsonElement e)
     {
@@ -209,6 +211,7 @@ public sealed record GlobalSettings
             ApprovalHoldSeconds = (int)(e.Long("approvalHoldSeconds") ?? d.ApprovalHoldSeconds),
             HoldOnlyWhenUnfocused = e.Bool("holdOnlyWhenUnfocused") ?? d.HoldOnlyWhenUnfocused,
             NotifyOnApproval = e.Bool("notifyOnApproval") ?? d.NotifyOnApproval,
+            ApprovalPopup = e.Str("approvalPopup") is { Length: > 0 } ap ? ap : (e.Bool("notifyOnApproval") == false ? "none" : d.ApprovalPopup),
         };
     }
 }

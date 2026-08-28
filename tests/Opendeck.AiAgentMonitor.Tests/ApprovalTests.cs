@@ -20,6 +20,17 @@ public class ApprovalTests
         => Assert.Equal(expected, PendingApproval.Summarize(tool, Input(input)));
 
     [Fact]
+    public void SummarizesCodexPatchesByTouchedFiles()
+    {
+        var patch = "*** Begin Patch\n*** Update File: /home/u/src/VH.Olho/Program.cs\n@@\n-a\n+b\n*** Add File: docs/notes.md\n+hi\n*** Delete File: old.txt\n*** End Patch";
+        var input = Input(JsonSerializer.Serialize(new { input = patch }));
+        Assert.Equal("apply_patch: Update VH.Olho/Program.cs, Add docs/notes.md (+1 more)", PendingApproval.Summarize("apply_patch", input));
+        Assert.Equal(new[] { "Update VH.Olho/Program.cs", "Add docs/notes.md", "Delete old.txt" }, PendingApproval.PatchFiles(patch));
+        var p = new PendingApproval { Id = "t", Provider = Provider.Codex, AgentKey = "codex:t", SessionId = "t", Cwd = "/p", ToolName = "apply_patch", Summary = "x", ToolInput = input };
+        Assert.StartsWith("apply_patch:\nUpdate VH.Olho/Program.cs\nAdd docs/notes.md\nDelete old.txt\n\n*** Begin Patch", ApprovalNotifier.FullText(p));
+    }
+
+    [Fact]
     public void SummaryIsCappedAndSingleLine()
     {
         var s = PendingApproval.Summarize("Bash", Input("{\"command\":\"" + new string('x', 200) + "\\nsecond line\"}"));

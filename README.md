@@ -17,9 +17,11 @@ Shows what your AI coding agents are doing on a stream deck (built for the Ulanz
   key turns amber with **APPROVE?** and the tool call (e.g. `Bash: git push origin main`), the selection jumps to it,
   and the Approve/Deny keys (also the two side buttons) answer it. Pressing the agent key, the dial or the Selected
   agent key instead hands the request back to the terminal (its normal dialog appears) and focuses the window.
-  Because the app's own prompt is not rendered while the hook holds the request, the full request text is also shown
-  as a **desktop notification with Approve / Deny buttons** (KDE/libnotify) and wrapped on the selected-agent and
-  Approve/Deny keys.
+  Because the app's own prompt is not rendered while the hook holds the request, the full request is also shown
+  on screen: a **dialog** (kdialog/zenity) with the complete command and Approve / Deny / *Decide in the app*
+  buttons — kept on top but without taking keyboard focus, so an Enter you were typing cannot approve anything —
+  or, if no dialog tool is installed, a desktop notification with Approve / Deny buttons. The keys show the wrapped
+  text too. No answer within the hold time → nothing is approved; the app shows its own prompt as usual.
 
 **Scope**: Linux only. Tested with OpenDeck 2.14 on KDE Plasma 6 / X11 with an Ulanzi D200X (through the
 [opendeck-ulanzi-d200x](https://github.com/edubox/opendeck-ulanzi-d200x) device plugin). Window focusing uses
@@ -56,7 +58,7 @@ hook per tool (installed by `--install-hooks`, see below).
 use OpenDeck → Plugins → *Install from file* (contains self-contained x64 and arm64 binaries; no .NET needed). Then
 run the two scripts below for the profile and the hooks (they are also in the zip).
 
-**From source**: .NET 10 SDK, `wmctrl` + `xdotool` (window focusing), `notify-send` (libnotify, optional),
+**From source**: .NET 10 SDK, `wmctrl` + `xdotool` (window focusing), `kdialog` or `zenity` (approval popup; falls back to `notify-send`),
 OpenDeck ≥ 2.x with **developer mode** on if you install as a symlink.
 
 ```sh
@@ -122,7 +124,8 @@ Plugin-wide (any property inspector → *Plugin-wide settings*): monitor/main pr
 interval (default 180 s), online usage fetch on/off, Codex idle timeout (default 120 min), Claude context
 window (auto = 1M when `~/.claude/settings.json` uses a `[1m]` model, else 200k), clock refresh; approval hold
 time (how long a permission request waits for the deck before the terminal dialog appears), *only when window
-unfocused* (skip the hold when you are already looking at the agent's window), desktop notification on/off, hook port.
+unfocused* (skip the hold when you are already looking at the agent's window), on-screen popup style (auto / dialog /
+notification / none), hook port.
 
 ## Layout of the code
 
@@ -134,7 +137,7 @@ src/Opendeck.AiAgentMonitor/
   Actions/     PluginHost (event routing, rendering, profile switch), one class per action
   Rendering/   KeyRenderer (SkiaSharp, 144×144 PNG data URLs)
   Focus/       WindowFocuser (wmctrl / xdotool)
-  Hooks/       HookServer (HttpListener; holds PermissionRequests), HookInstaller (settings.json / hooks.json / trust), ApprovalNotifier (notify-send)
+  Hooks/       HookServer (HttpListener; holds PermissionRequests), HookInstaller (settings.json / hooks.json / trust), ApprovalNotifier (kdialog / zenity / notify-send)
 plugin/com.josbol.aiagentmonitor.sdPlugin/   manifest, icons, property inspectors, fonts, hooks/codex-hook.sh (+ bin/ after build)
 tests/Opendeck.AiAgentMonitor.Tests/           xunit tests (usage parsing, rollout rate limits, approvals, Codex trust hash, deck events)
 scripts/     build.sh, package.sh, install.sh, install-profile.py

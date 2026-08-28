@@ -44,9 +44,33 @@ public sealed class PendingApproval
                     if (p.Value.ValueKind == JsonValueKind.String && p.Value.GetString() is { Length: > 0 } v) { s = v; break; }
         }
         if (s is not null && (tool is "Edit" or "Write" or "MultiEdit" or "Read" or "NotebookEdit") && s.Contains('/')) s = Path.GetFileName(s);
+        if (s is not null && s.TrimStart().StartsWith("*** Begin Patch", StringComparison.Ordinal))
+        {
+            var files = PatchFiles(s);
+            s = files.Count == 0 ? "patch" : string.Join(", ", files.Take(2)) + (files.Count > 2 ? $" (+{files.Count - 2} more)" : "");
+        }
         s = s?.Replace('\n', ' ').Trim();
         if (s is { Length: > 60 }) s = s[..60] + "…";
         return s is null ? tool : $"{tool}: {s}";
+    }
+
+    /// <summary>"Update README.md", "Add src/Foo.cs", … from a Codex apply_patch body.</summary>
+    public static List<string> PatchFiles(string patch)
+    {
+        var list = new List<string>();
+        foreach (var raw in patch.Split('\n'))
+        {
+            var line = raw.Trim();
+            foreach (var op in new[] { "*** Update File: ", "*** Add File: ", "*** Delete File: " })
+                if (line.StartsWith(op, StringComparison.Ordinal))
+                {
+                    var path = line[op.Length..].Trim();
+                    var parts = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+                    var shortPath = parts.Length > 2 ? string.Join('/', parts[^2..]) : path;
+                    list.Add(op[4..^7] + " " + shortPath);   // "Update", "Add", "Delete"
+                }
+        }
+        return list;
     }
 }
 

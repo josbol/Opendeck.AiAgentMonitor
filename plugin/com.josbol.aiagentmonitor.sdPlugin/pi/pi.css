@@ -1,0 +1,10 @@
+:root { color-scheme: dark; }
+body { margin: 0; padding: 10px 12px; font: 13px/1.4 system-ui, sans-serif; color: #e6e8ee; background: transparent; }
+h3 { margin: 14px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: #8a93a6; }
+.row { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+.row label { flex: 0 0 120px; color: #b8bfcc; }
+.row input[type=text], .row input[type=number], .row select { flex: 1; min-width: 0; padding: 5px 7px; border: 1px solid #333a47; border-radius: 6px; background: #171a21; color: #e6e8ee; }
+.hint { color: #8a93a6; font-size: 11px; margin: 2px 0 8px; }
+button { padding: 5px 10px; border: 1px solid #333a47; border-radius: 6px; background: #1f2430; color: #e6e8ee; cursor: pointer; }
+pre#status { white-space: pre-wrap; font-size: 11px; color: #b8bfcc; background: #12151b; padding: 8px; border-radius: 6px; max-height: 90px; overflow: auto; }
+details summary { cursor: pointer; color: #8a93a6; font-size: 12px; margin-top: 12px; }

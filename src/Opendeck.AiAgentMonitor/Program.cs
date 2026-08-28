@@ -1,0 +1,132 @@
+using System.Runtime.InteropServices;
+using System.Text.Json;
+using Opendeck.AiAgentMonitor.Actions;
+using Opendeck.AiAgentMonitor.Agents;
+using Opendeck.AiAgentMonitor.Deck;
+using Opendeck.AiAgentMonitor.Rendering;
+using Opendeck.AiAgentMonitor.Util;
+
+// ---- developer/diagnostic modes (no OpenDeck needed) -------------------------------------------
+if (args.Length > 0 && args[0].StartsWith("--"))
+{
+    var monitor = new AgentMonitor();
+    switch (args[0])
+    {
+        case "--dump":
+        {
+            await monitor.RefreshAsync(CancellationToken.None);
+            var s = monitor.Current;
+            Console.WriteLine(JsonSerializer.Serialize(new
+            {
+                at = s.At,
+                agents = s.Agents.Select(a => new { a.Key, a.Provider, a.Name, a.ProjectName, a.Cwd, a.Host, a.State, a.Detail, a.Model, a.ContextTokens, a.ContextPct, a.Pid, a.SubAgents, a.Title, StateSince = a.StateSince.ToLocalTime(), LastActivity = a.LastActivity.ToLocalTime() }),
+                claude = s.Claude, codex = s.Codex,
+            }, new JsonSerializerOptions { WriteIndented = true, Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() } }));
+            return 0;
+        }
+        case "--render":
+        {
+            var dir = args.Length > 1 ? args[1] : "render-out";
+            Directory.CreateDirectory(dir);
+            await monitor.RefreshAsync(CancellationToken.None);
+            var s = monitor.Current; var now = DateTimeOffset.UtcNow; var r = new KeyRenderer();
+            void Save(string name, string dataUrl) => File.WriteAllBytes(Path.Combine(dir, name + ".png"), Convert.FromBase64String(dataUrl[(dataUrl.IndexOf(',') + 1)..]));
+            Save("quota-claude", r.QuotaKey(Provider.Claude, s.Claude, now));
+            Save("quota-codex", r.QuotaKey(Provider.Codex, s.Codex, now));
+            Save("overview", r.OverviewKey(s, now));
+            Save("attention", r.AttentionKey(s, now, false));
+            Save("attention-back", r.AttentionKey(s, now, true));
+            var ordered = s.Ordered();
+            for (var i = 0; i < ordered.Count; i++) { Save($"agent-{i + 1}", r.AgentKey(ordered[i], now)); Save($"selected-{i + 1}", r.AgentKey(ordered[i], now, i + 1, ordered.Count)); }
+            Save("empty-slot", r.EmptySlot(3, null));
+            // synthetic samples so every state can be eyeballed
+            var sample = new AgentInfo { Key = "x", Provider = Provider.Claude, Name = "demo", Cwd = "/home/x/source/PortalDocente.API", Host = "Rider", State = AgentState.Waiting, StateSince = now.AddMinutes(-3), LastActivity = now, StartedAt = now.AddHours(-1), Model = "claude-fable-5", ContextPct = 37, Detail = "permission prompt", SubAgents = 2 };
+            Save("sample-waiting", r.AgentKey(sample, now));
+            Save("sample-working", r.AgentKey(sample with { Provider = Provider.Codex, State = AgentState.Working, Detail = null, Model = "gpt-5.6-sol", Host = "App", ContextPct = 82 }, now));
+            Save("sample-idle", r.AgentKey(sample with { State = AgentState.Idle, Detail = null, Host = "Term", ContextPct = 95 }, now));
+            var q = new ProviderQuota { Provider = Provider.Claude, FetchedAt = now, Plan = "max", Windows = new[] { new QuotaWindow("5h", 36, now.AddHours(2.3)), new QuotaWindow("7d", 67, now.AddDays(1)) } };
+            Save("sample-quota", r.QuotaKey(Provider.Claude, q, now));
+            var snap = new Snapshot { Agents = new[] { sample, sample with { Key = "y", State = AgentState.Working }, sample with { Key = "z", Provider = Provider.Codex, State = AgentState.Idle } }, At = now, Claude = q };
+            Save("sample-overview", r.OverviewKey(snap, now));
+            var req = new PendingApproval { Id = "t1", Provider = Provider.Claude, AgentKey = "x", SessionId = "x", Cwd = sample.Cwd, ToolName = "Bash", Summary = PendingApproval.Summarize("Bash", JsonDocument.Parse("{\"command\":\"git push origin main --force-with-lease\"}").RootElement) };
+            Save("sample-approve", r.DecisionKey(req, sample, true, 1, now));
+            Save("sample-deny", r.DecisionKey(req, sample, false, 0, now));
+            Save("sample-approve-empty", r.DecisionKey(null, null, true, 0, now));
+            Save("sample-agent-approval", r.AgentKey(sample with { Approval = req, Detail = req.Summary }, now));
+            Save("sample-selected-approval", r.AgentKey(sample with { Approval = req, Detail = req.Summary }, now, 1, 3));
+            Save("sample-attention", r.AttentionKey(snap, now, false));
+            Console.WriteLine($"wrote {Directory.GetFiles(dir).Length} images to {dir}");
+            return 0;
+        }
+        case "--focus":
+        {
+            await monitor.RefreshAsync(CancellationToken.None);
+            var dry = args.Contains("--dry");
+            var sel = args.Skip(1).FirstOrDefault(a => a != "--dry");
+            var targets = sel is null ? monitor.Current.Ordered() : monitor.Current.Agents.Where(a => a.Key.Contains(sel)).ToList();
+            if (targets.Count == 0) { Console.WriteLine("no such agent"); return 1; }
+            foreach (var t in dry ? targets : targets.Take(1))
+                Console.WriteLine($"{t.Key}: " + (await Opendeck.AiAgentMonitor.Focus.WindowFocuser.FocusAsync(t, dry) ? (dry ? "window found" : "focused") : "not found"));
+            return 0;
+        }
+        case "--install-hooks":
+        case "--uninstall-hooks":
+        {
+            // port / hold come from the plugin's global settings (if it has been configured), else defaults
+            var gs = new GlobalSettings();
+            var settingsFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config", "opendeck", "settings", "com.josbol.aiagentmonitor.sdPlugin.json");
+            try { if (File.Exists(settingsFile)) gs = GlobalSettings.From(JsonDocument.Parse(File.ReadAllText(settingsFile)).RootElement); } catch { }
+            var port = args.Length > 1 && int.TryParse(args[1], out var pp) ? pp : gs.HookPort;
+            var hold = args.Length > 2 && int.TryParse(args[2], out var hh) ? hh : gs.ApprovalHoldSeconds;
+            if (args[0] == "--install-hooks") Opendeck.AiAgentMonitor.Hooks.HookInstaller.Install(port, hold);
+            else Opendeck.AiAgentMonitor.Hooks.HookInstaller.Uninstall();
+            return 0;
+        }
+        case "--activate":
+        {
+            // diagnostic: run the full activation sequence on a window id (hex from `wmctrl -l` or decimal from xdotool)
+            if (args.Length < 2) { Console.WriteLine("usage: --activate <window id>"); return 1; }
+            Console.WriteLine(await Opendeck.AiAgentMonitor.Focus.WindowFocuser.ActivateByIdAsync(args[1]) ? "activated" : "not confirmed");
+            return 0;
+        }
+        case "--codex-hook-hash":
+        {
+            // read-only: prints the config.toml trust key + hash the installer would write for the current ~/.codex/hooks.json
+            var hp = Opendeck.AiAgentMonitor.Hooks.HookInstaller.CodexHooksPath;
+            var rootNode = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(hp)) as System.Text.Json.Nodes.JsonObject ?? new();
+            var (key, hash) = Opendeck.AiAgentMonitor.Hooks.HookInstaller.CodexTrustEntry(rootNode);
+            Console.WriteLine($"[hooks.state.\"{key}\"]\ntrusted_hash = \"{hash}\"");
+            return 0;
+        }
+        case "--version":
+            Console.WriteLine(typeof(Program).Assembly.GetName().Version);
+            return 0;
+        default:
+            Console.WriteLine("usage: opendeck-aiagentmonitor [--dump | --render <dir> | --focus [key] [--dry] | --install-hooks [port] [holdSeconds] | --uninstall-hooks] | -port N -pluginUUID id -registerEvent ev -info json");
+            return 1;
+    }
+}
+
+// ---- plugin mode --------------------------------------------------------------------------------
+var deck = DeckClient.FromArgs(args);
+if (deck is null)
+{
+    Console.Error.WriteLine("Missing -port/-pluginUUID; run with --dump for diagnostics.");
+    return 2;
+}
+
+Log.Info($"AI Agent Monitor starting (pid {Environment.ProcessId})");
+using var cts = new CancellationTokenSource();
+using var sigterm = PosixSignalRegistration.Create(PosixSignal.SIGTERM, ctx => { ctx.Cancel = true; cts.Cancel(); });
+using var sigint = PosixSignalRegistration.Create(PosixSignal.SIGINT, ctx => { ctx.Cancel = true; cts.Cancel(); });
+
+using var mon = new AgentMonitor();
+await using var host = new PluginHost(deck, mon);
+mon.Start();
+try { await deck.RunAsync(cts.Token); }
+catch (OperationCanceledException) { }
+catch (Exception ex) { Log.Error("fatal", ex); return 1; }
+Log.Info("exiting");
+return 0;
+
+public partial class Program { }

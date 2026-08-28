@@ -1,0 +1,26 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="pi.css"><script src="pi.js"></script></head><body>
+<div class="row"><label for="slot">Slot</label><input type="number" id="slot" min="1" max="20"></div>
+<div class="hint">Agents are ordered attention-first: those waiting for you, then working, then idle. Slot 1 is the most urgent.</div>
+<div class="row"><label for="provider">Show</label><select id="provider"><option value="auto">Claude + Codex</option><option value="claude">Claude only</option><option value="codex">Codex only</option></select></div>
+<div class="hint">Press the key to bring the agent's window (Rider, terminal, Codex app) to the front.</div>
+<details><summary>Plugin-wide settings</summary>
+<div class="row"><label for="g-monitorProfile">Monitor profile</label><input type="text" id="g-monitorProfile"></div>
+<div class="row"><label for="g-mainProfile">Main profile</label><input type="text" id="g-mainProfile"></div>
+<div class="row"><label for="g-usageRefreshSeconds">Usage refresh (s)</label><input type="number" id="g-usageRefreshSeconds" min="60" step="30"></div>
+<div class="row"><label for="g-networkQuota">Fetch usage online</label><input type="checkbox" id="g-networkQuota"></div>
+<div class="hint">Reads the subscription windows from claude.ai / chatgpt.com with the tokens Claude Code and Codex already store. Off = Codex usage from local logs only, no Claude usage.</div>
+<div class="row"><label for="g-codexIdleMinutes">Codex idle timeout (min)</label><input type="number" id="g-codexIdleMinutes" min="5" step="5"></div>
+<div class="row"><label for="g-contextWindow">Claude context window</label><select id="g-contextWindow"><option value="0">auto (from settings.json)</option><option value="200000">200k</option><option value="1000000">1M</option></select></div>
+<h3>Approve / deny from the deck</h3>
+<div class="row"><label for="g-approvalHoldSeconds">Hold request (s)</label><input type="number" id="g-approvalHoldSeconds" min="5" step="5"></div>
+<div class="hint">How long a permission request waits for a deck press before the terminal shows its own dialog. Pressing the agent key / dial hands it to the terminal right away.</div>
+<div class="row"><label for="g-holdOnlyWhenUnfocused">Only when window unfocused</label><input type="checkbox" id="g-holdOnlyWhenUnfocused"></div>
+<div class="hint">Skip the hold when the agent's window is already the active window (you are probably looking at it).</div>
+<div class="row"><label for="g-hookPort">Hook port</label><input type="number" id="g-hookPort" min="1024" max="65535"></div>
+<div class="hint">Local port the Claude/Codex hooks post to. After changing it: reload the plugin and run <code>opendeck-aiagentmonitor --install-hooks</code> again.</div>
+<div class="row"><label for="g-tickSeconds">Clock refresh (s)</label><input type="number" id="g-tickSeconds" min="10" step="5"></div>
+<div class="row"><button id="refresh" type="button">Refresh now</button></div>
+<h3>Live</h3><pre id="status">…</pre>
+</details>
+<script>window.bindFields = () => { bind("slot", "slot", { num: true, def: 1 }); bind("provider", "provider", { def: "auto" }); };</script>
+</body></html>

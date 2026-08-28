@@ -1,0 +1,167 @@
+{
+	"Name": "AI Agent Monitor",
+	"Description": "Live status of Claude Code and Codex sessions (working / needs you / idle), subscription usage, approve or deny permission requests from the deck, and one-press jump to the agent's window.",
+	"Author": "Jos Bol",
+	"Version": "0.2.0",
+	"Icon": "icons/plugin",
+	"Category": "AI Agent Monitor",
+	"CategoryIcon": "icons/plugin",
+	"URL": "https://github.com/josbol/Opendeck.AiAgentMonitor",
+	"CodePath": "bin/opendeck-aiagentmonitor",
+	"CodePathLin": "bin/opendeck-aiagentmonitor",
+	"CodePaths": {
+		"x86_64-unknown-linux-gnu": "bin/opendeck-aiagentmonitor",
+		"aarch64-unknown-linux-gnu": "bin/opendeck-aiagentmonitor"
+	},
+	"OS": [
+		{
+			"Platform": "linux",
+			"MinimumVersion": "0"
+		}
+	],
+	"SDKVersion": 2,
+	"Software": {
+		"MinimumVersion": "6.0"
+	},
+	"Actions": [
+		{
+			"UUID": "com.josbol.aiagentmonitor.agent",
+			"Name": "Agent",
+			"Tooltip": "Shows one running agent (attention first). Press to bring its window to the front.",
+			"Icon": "icons/agent",
+			"Controllers": [
+				"Keypad"
+			],
+			"SupportedInMultiActions": false,
+			"PropertyInspectorPath": "pi/agent.html",
+			"States": [
+				{
+					"Image": "icons/agent",
+					"ShowTitle": false,
+					"TitleAlignment": "bottom"
+				}
+			]
+		},
+		{
+			"UUID": "com.josbol.aiagentmonitor.quota",
+			"Name": "Usage",
+			"Tooltip": "Subscription usage windows (5h / 7d) for Claude or Codex. Press to open the usage page.",
+			"Icon": "icons/quota",
+			"Controllers": [
+				"Keypad"
+			],
+			"SupportedInMultiActions": false,
+			"PropertyInspectorPath": "pi/quota.html",
+			"States": [
+				{
+					"Image": "icons/quota",
+					"ShowTitle": false
+				}
+			]
+		},
+		{
+			"UUID": "com.josbol.aiagentmonitor.overview",
+			"Name": "Overview",
+			"Tooltip": "How many agents are working, waiting for you, or idle. Press to jump to the one that needs you.",
+			"Icon": "icons/overview",
+			"Controllers": [
+				"Keypad"
+			],
+			"SupportedInMultiActions": false,
+			"States": [
+				{
+					"Image": "icons/overview",
+					"ShowTitle": false
+				}
+			]
+		},
+		{
+			"UUID": "com.josbol.aiagentmonitor.attention",
+			"Name": "Attention → Monitor",
+			"Tooltip": "For your main layout: lights up when an agent needs you; press to switch to the monitor profile (or back).",
+			"Icon": "icons/attention",
+			"Controllers": [
+				"Keypad"
+			],
+			"SupportedInMultiActions": false,
+			"PropertyInspectorPath": "pi/attention.html",
+			"States": [
+				{
+					"Image": "icons/attention",
+					"ShowTitle": false
+				}
+			]
+		},
+		{
+			"UUID": "com.josbol.aiagentmonitor.selected",
+			"Name": "Selected agent",
+			"Tooltip": "Details of the agent picked with the Select dial. Press to focus its window.",
+			"Icon": "icons/selected",
+			"Controllers": [
+				"Keypad"
+			],
+			"SupportedInMultiActions": false,
+			"States": [
+				{
+					"Image": "icons/selected",
+					"ShowTitle": false
+				}
+			]
+		},
+		{
+			"UUID": "com.josbol.aiagentmonitor.dial",
+			"Name": "Select dial",
+			"Tooltip": "Rotate to pick an agent (shown on the Selected agent key); press to focus its window.",
+			"Icon": "icons/dial",
+			"Controllers": [
+				"Encoder",
+				"Keypad"
+			],
+			"Encoder": {
+				"TriggerDescription": {
+					"Rotate": "Select agent",
+					"Push": "Focus window"
+				}
+			},
+			"SupportedInMultiActions": false,
+			"States": [
+				{
+					"Image": "icons/dial",
+					"ShowTitle": false
+				}
+			]
+		},
+		{
+			"UUID": "com.josbol.aiagentmonitor.approve",
+			"Name": "Approve",
+			"Tooltip": "Approves the permission request of the selected agent (or the most urgent one). Shows what it would approve.",
+			"Icon": "icons/approve",
+			"Controllers": [
+				"Keypad"
+			],
+			"SupportedInMultiActions": false,
+			"States": [
+				{
+					"Image": "icons/approve",
+					"ShowTitle": false
+				}
+			]
+		},
+		{
+			"UUID": "com.josbol.aiagentmonitor.deny",
+			"Name": "Deny",
+			"Tooltip": "Denies the permission request of the selected agent (or the most urgent one).",
+			"Icon": "icons/deny",
+			"Controllers": [
+				"Keypad"
+			],
+			"SupportedInMultiActions": false,
+			"States": [
+				{
+					"Image": "icons/deny",
+					"ShowTitle": false
+				}
+			]
+		}
+	]
+}

@@ -156,7 +156,9 @@ public sealed class KeyRenderer
         var reset = primary.TimeToReset(now);
         if (reset is not null) footer += (footer.Length > 0 ? "  ↻" : "↻") + Elapsed(reset.Value);
         DrawFitted(c, footer, Size / 2f, 134, 11, secondary is not null ? Threshold(secondary.UsedPct, 50, 80) : Muted, maxWidth: Size - 12);
-        if (q?.Error is not null) DrawText(c, "stale", Size - 8, 18 + 12, 8, Warn, align: SKTextAlign.Right);
+        var age = now - q!.FetchedAt;
+        if (q.Error is not null || age > TimeSpan.FromMinutes(20))
+            DrawText(c, (q.Error is "rate limited" ? "rate limited · " : "stale · ") + Elapsed(age), Size - 8, 30, 8, Warn, align: SKTextAlign.Right);
         return Encode(s);
     }
 

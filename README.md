@@ -121,7 +121,9 @@ Per key (property inspector): agent slot number and provider filter; usage provi
 direction (to monitor / back to main) and profile override.
 
 Plugin-wide (any property inspector → *Plugin-wide settings*): monitor/main profile names, usage refresh
-interval (default 180 s), online usage fetch on/off, Codex idle timeout (default 120 min), Claude context
+interval (default 5 min, floor 2 min; 3× slower while no agent is working; a 429 from the Claude endpoint triggers an
+exponential backoff and the last good numbers stay on the key marked "stale · age", cached in
+`~/.cache/opendeck-aiagentmonitor/`), online usage fetch on/off, Codex idle timeout (default 120 min), Claude context
 window (auto = 1M when `~/.claude/settings.json` uses a `[1m]` model, else 200k), clock refresh; approval hold
 time (how long a permission request waits for the deck before the terminal dialog appears), *only when window
 unfocused* (skip the hold when you are already looking at the agent's window), on-screen popup style (auto / dialog /

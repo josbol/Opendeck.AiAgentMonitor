@@ -5,9 +5,9 @@
 <details><summary>Plugin-wide settings</summary>
 <div class="row"><label for="g-monitorProfile">Monitor profile</label><input type="text" id="g-monitorProfile"></div>
 <div class="row"><label for="g-mainProfile">Main profile</label><input type="text" id="g-mainProfile"></div>
-<div class="row"><label for="g-usageRefreshSeconds">Usage refresh (s)</label><input type="number" id="g-usageRefreshSeconds" min="60" step="30"></div>
+<div class="row"><label for="g-usageRefreshSeconds">Usage refresh (s)</label><input type="number" id="g-usageRefreshSeconds" min="120" step="60"></div>
 <div class="row"><label for="g-networkQuota">Fetch usage online</label><input type="checkbox" id="g-networkQuota"></div>
-<div class="hint">Reads the subscription windows from claude.ai / chatgpt.com with the tokens Claude Code and Codex already store. Off = Codex usage from local logs only, no Claude usage.</div>
+<div class="hint">Reads the subscription windows from claude.ai / chatgpt.com with the tokens Claude Code and Codex already store. Off = Codex usage from local logs only, no Claude usage. The Claude endpoint rate-limits eager clients for an hour at a time: keep the refresh at 5 min or slower (it is 3× slower anyway while no agent is working, and backs off by itself after a 429).</div>
 <div class="row"><label for="g-codexIdleMinutes">Codex idle timeout (min)</label><input type="number" id="g-codexIdleMinutes" min="5" step="5"></div>
 <div class="row"><label for="g-contextWindow">Claude context window</label><select id="g-contextWindow"><option value="0">auto (from settings.json)</option><option value="200000">200k</option><option value="1000000">1M</option></select></div>
 <h3>Approve / deny from the deck</h3>

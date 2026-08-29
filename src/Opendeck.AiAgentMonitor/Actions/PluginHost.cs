@@ -96,7 +96,7 @@ public sealed class PluginHost : IAsyncDisposable
         return idx < 0 ? 0 : idx;
     }
 
-    public void RequestUsageRefresh() => Monitor.ApplySettings(Settings);
+    public void RequestUsageRefresh() => Monitor.RequestUsageRefresh();
 
     // ---- profile switching via the OpenDeck CLI (plugins may not send switchProfile themselves) ----
 

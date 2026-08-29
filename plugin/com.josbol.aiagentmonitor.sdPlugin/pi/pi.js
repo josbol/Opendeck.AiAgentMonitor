@@ -49,7 +49,7 @@ function bind(id, key, opts) {
 function render() {
   if (typeof window.bindFields === "function") window.bindFields();
   // shared global section
-  bind("g-usageRefreshSeconds", "usageRefreshSeconds", { global: true, num: true, def: 180 });
+  bind("g-usageRefreshSeconds", "usageRefreshSeconds", { global: true, num: true, def: 300 });
   bind("g-networkQuota", "networkQuota", { global: true, def: true });
   bind("g-codexIdleMinutes", "codexIdleMinutes", { global: true, num: true, def: 120 });
   bind("g-contextWindow", "contextWindow", { global: true, num: true, def: 0 });

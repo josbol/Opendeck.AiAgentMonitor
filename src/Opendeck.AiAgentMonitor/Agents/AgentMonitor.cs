@@ -25,18 +25,33 @@ public sealed class AgentMonitor : IDisposable
 
     // settings
     public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(3);
-    public TimeSpan UsageInterval { get; set; } = TimeSpan.FromSeconds(180);
+    /// <summary>Base cadence for the usage endpoints; tripled while no Claude session is working (the numbers barely move then).</summary>
+    public TimeSpan UsageInterval { get; set; } = TimeSpan.FromMinutes(5);
+    private GlobalSettings? _appliedSettings;
+    private DateTimeOffset _lastManualRefresh = DateTimeOffset.MinValue;
     public bool NetworkQuota { get; set; } = true;
     public bool CodexNetworkQuota { get; set; } = true;
 
     public void ApplySettings(GlobalSettings s)
     {
-        UsageInterval = TimeSpan.FromSeconds(Math.Max(60, s.UsageRefreshSeconds));
+        var changed = _appliedSettings is null || _appliedSettings != s;
+        _appliedSettings = s;
+        UsageInterval = TimeSpan.FromSeconds(Math.Max(120, s.UsageRefreshSeconds));
         NetworkQuota = s.NetworkQuota;
         CodexNetworkQuota = s.NetworkQuota;
         _codexRollouts.IdleTimeout = TimeSpan.FromMinutes(Math.Max(5, s.CodexIdleMinutes));
         _claudeSessions.ContextWindowOverride = s.ContextWindow;
-        _lastClaudeUsage = _lastCodexUsage = DateTimeOffset.MinValue; // refetch with new settings
+        if (changed) RequestUsageRefresh();   // OpenDeck re-sends unchanged settings on every willAppear: no refetch for those
+        Interlocked.Exchange(ref _dirty, 1);
+    }
+
+    /// <summary>Fetch usage at the next pass — at most once a minute, and never inside a server-imposed backoff.</summary>
+    public void RequestUsageRefresh()
+    {
+        var now = DateTimeOffset.UtcNow;
+        if (now - _lastManualRefresh < TimeSpan.FromMinutes(1)) return;
+        _lastManualRefresh = now;
+        _lastClaudeUsage = _lastCodexUsage = DateTimeOffset.MinValue;
         Interlocked.Exchange(ref _dirty, 1);
     }
 
@@ -112,15 +127,20 @@ public sealed class AgentMonitor : IDisposable
                     });
             }
 
-            // quotas
+            // quotas: base cadence while an agent is active, 3× slower otherwise; the Claude endpoint hands out
+            // hour-long Retry-Afters when polled too eagerly, so the client also backs off on its own
+            var anyClaudeActive = agents.Any(a => a.Provider == Provider.Claude && a.State is AgentState.Working or AgentState.Waiting);
+            var anyCodexActive = agents.Any(a => a.Provider == Provider.Codex && a.State is AgentState.Working or AgentState.Waiting);
+            var claudeInterval = anyClaudeActive ? UsageInterval : UsageInterval * 3;
+            var codexInterval = anyCodexActive ? UsageInterval : UsageInterval * 3;
             ProviderQuota? claude = _claudeUsage.Last;
-            if (NetworkQuota && now - _lastClaudeUsage > UsageInterval)
+            if (NetworkQuota && now - _lastClaudeUsage > claudeInterval && now >= _claudeUsage.NotBefore)
             {
                 _lastClaudeUsage = now;
-                claude = await _claudeUsage.FetchAsync(ct);
+                claude = await _claudeUsage.FetchAsync(UsageInterval, ct);
             }
             ProviderQuota? codex = _codexRollouts.LatestQuota;
-            if (CodexNetworkQuota && now - _lastCodexUsage > UsageInterval)
+            if (CodexNetworkQuota && now - _lastCodexUsage > codexInterval)
             {
                 _lastCodexUsage = now;
                 var api = await _codexUsage.FetchAsync(ct);
@@ -180,7 +200,7 @@ public sealed class AgentMonitor : IDisposable
 /// <summary>Plugin-wide settings (stored via setGlobalSettings).</summary>
 public sealed record GlobalSettings
 {
-    public int UsageRefreshSeconds { get; init; } = 180;
+    public int UsageRefreshSeconds { get; init; } = 300;
     public bool NetworkQuota { get; init; } = true;
     public int CodexIdleMinutes { get; init; } = 120;
     public long ContextWindow { get; init; } = 0;          // 0 = auto

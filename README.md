@@ -18,10 +18,12 @@ Shows what your AI coding agents are doing on a stream deck (built for the Ulanz
   and the Approve/Deny keys (also the two side buttons) answer it. Pressing the agent key, the dial or the Selected
   agent key instead hands the request back to the terminal (its normal dialog appears) and focuses the window.
   Because the app's own prompt is not rendered while the hook holds the request, the full request is also shown
-  on screen: a **dialog** (kdialog/zenity) with the complete command and Approve / Deny / *Decide in the app*
-  buttons — kept on top but without taking keyboard focus, so an Enter you were typing cannot approve anything —
-  or, if no dialog tool is installed, a desktop notification with Approve / Deny buttons. The keys show the wrapped
-  text too. No answer within the hold time → nothing is approved; the app shows its own prompt as usual.
+  on screen: a **Qt dialog** (`hooks/approval-dialog.py`, needs `python3` with PyQt6, PySide6 or PyQt5) with the
+  command in a monospace box, a hold countdown and Approve / Deny / *Decide in the app* buttons — opened on the
+  monitor of your choice (middle / primary / mouse), kept on top, and never taking keyboard focus, so an Enter you
+  were typing cannot approve anything. Without a Qt binding it falls back to kdialog/zenity, and without those to
+  a desktop notification with Approve / Deny buttons. The keys show the wrapped text too. No answer within the hold
+  time → nothing is approved; the app shows its own prompt as usual.
 
 **Scope**: Linux only. Tested with OpenDeck 2.14 on KDE Plasma 6 / X11 with an Ulanzi D200X (through the
 [opendeck-ulanzi-d200x](https://github.com/edubox/opendeck-ulanzi-d200x) device plugin). Window focusing uses
@@ -36,6 +38,8 @@ using the tokens they store. Monitoring needs no hooks; approving from the deck 
 hook per tool (installed by `--install-hooks`, see below).
 
 ![Keys rendered by the plugin](docs/keys.png)
+
+![Approval dialog](docs/dialog.png)
 
 ## How it knows
 
@@ -58,7 +62,7 @@ hook per tool (installed by `--install-hooks`, see below).
 use OpenDeck → Plugins → *Install from file* (contains self-contained x64 and arm64 binaries; no .NET needed). Then
 run the two scripts below for the profile and the hooks (they are also in the zip).
 
-**From source**: .NET 10 SDK, `wmctrl` + `xdotool` (window focusing), `kdialog` or `zenity` (approval popup; falls back to `notify-send`),
+**From source**: .NET 10 SDK, `wmctrl` + `xdotool` (window focusing), `python3` + PyQt6/PySide6/PyQt5 (approval popup; falls back to `kdialog`/`zenity`, then `notify-send`),
 OpenDeck ≥ 2.x with **developer mode** on if you install as a symlink.
 
 ```sh
@@ -127,7 +131,7 @@ exponential backoff and the last good numbers stay on the key marked "stale · a
 window (auto = 1M when `~/.claude/settings.json` uses a `[1m]` model, else 200k), clock refresh; approval hold
 time (how long a permission request waits for the deck before the terminal dialog appears), *only when window
 unfocused* (skip the hold when you are already looking at the agent's window), on-screen popup style (auto / dialog /
-notification / none), hook port.
+notification / none) and the monitor it opens on (middle / primary / mouse), hook port.
 
 ## Layout of the code
 
@@ -140,7 +144,7 @@ src/Opendeck.AiAgentMonitor/
   Rendering/   KeyRenderer (SkiaSharp, 144×144 PNG data URLs)
   Focus/       WindowFocuser (wmctrl / xdotool)
   Hooks/       HookServer (HttpListener; holds PermissionRequests), HookInstaller (settings.json / hooks.json / trust), ApprovalNotifier (kdialog / zenity / notify-send)
-plugin/com.josbol.aiagentmonitor.sdPlugin/   manifest, icons, property inspectors, fonts, hooks/codex-hook.sh (+ bin/ after build)
+plugin/com.josbol.aiagentmonitor.sdPlugin/   manifest, icons, property inspectors, fonts, hooks/codex-hook.sh + approval-dialog.py (+ bin/ after build)
 tests/Opendeck.AiAgentMonitor.Tests/           xunit tests (usage parsing, rollout rate limits, approvals, Codex trust hash, deck events)
 scripts/     build.sh, package.sh, install.sh, install-profile.py
 .github/     CI (build + test) and release (tag v* → zip attached to the GitHub release)

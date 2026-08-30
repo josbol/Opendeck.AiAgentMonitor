@@ -60,6 +60,7 @@ function render() {
   bind("g-approvalHoldSeconds", "approvalHoldSeconds", { global: true, num: true, def: 30 });
   bind("g-holdOnlyWhenUnfocused", "holdOnlyWhenUnfocused", { global: true, def: false });
   bind("g-approvalPopup", "approvalPopup", { global: true, def: "auto" });
+  bind("g-popupScreen", "popupScreen", { global: true, def: "center" });
   const status = document.getElementById("status");
   if (status && window.lastSnapshot) {
     const s = window.lastSnapshot;

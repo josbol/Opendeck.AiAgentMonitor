@@ -52,7 +52,7 @@ public sealed class PluginHost : IAsyncDisposable
         };
         Hooks.Activity += () => Monitor.Poke();
         Hooks.Start(Settings.HookPort);
-        Notifier = new ApprovalNotifier(monitor.Approvals) { Style = Settings.ApprovalPopup, HoldSeconds = () => Settings.ApprovalHoldSeconds };
+        Notifier = new ApprovalNotifier(monitor.Approvals) { Style = Settings.ApprovalPopup, Screen = Settings.PopupScreen, HoldSeconds = () => Settings.ApprovalHoldSeconds };
         _ = Task.Run(TickLoopAsync);
     }
 
@@ -152,7 +152,7 @@ public sealed class PluginHost : IAsyncDisposable
                 Settings = GlobalSettings.From(e.Settings);
                 Monitor.ApplySettings(Settings);
                 if (Settings.HookPort != Hooks.Port) Log.Warn($"Hook port changed to {Settings.HookPort}; reload the plugin and re-run --install-hooks");
-                Notifier.Style = Settings.ApprovalPopup;
+                Notifier.Style = Settings.ApprovalPopup; Notifier.Screen = Settings.PopupScreen;
                 Log.Info($"Global settings: {Json.Serialize(Settings)}");
                 RequestRender();
                 break;

@@ -213,6 +213,8 @@ public sealed record GlobalSettings
     public bool NotifyOnApproval { get; init; } = true;
     /// <summary>auto | dialog | notification | none — how a held permission request is shown on screen.</summary>
     public string ApprovalPopup { get; init; } = "auto";
+    /// <summary>center | primary | mouse — which monitor the popup opens on.</summary>
+    public string PopupScreen { get; init; } = "center";
 
     public static GlobalSettings From(System.Text.Json.JsonElement e)
     {
@@ -232,6 +234,7 @@ public sealed record GlobalSettings
             HoldOnlyWhenUnfocused = e.Bool("holdOnlyWhenUnfocused") ?? d.HoldOnlyWhenUnfocused,
             NotifyOnApproval = e.Bool("notifyOnApproval") ?? d.NotifyOnApproval,
             ApprovalPopup = e.Str("approvalPopup") is { Length: > 0 } ap ? ap : (e.Bool("notifyOnApproval") == false ? "none" : d.ApprovalPopup),
+            PopupScreen = e.Str("popupScreen") is { Length: > 0 } ps ? ps : d.PopupScreen,
         };
     }
 }

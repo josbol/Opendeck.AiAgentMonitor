@@ -30,9 +30,38 @@ public sealed class ApprovalNotifier
 
     /// <summary>auto | dialog | notification | none</summary>
     public string Style { get; set; } = "auto";
+    /// <summary>center | primary | mouse — the monitor the popup opens on.</summary>
+    public string Screen { get; set; } = "center";
     public Func<int> HoldSeconds { get; set; } = () => 30;
 
-    private static readonly Lazy<string?> DialogTool = new(() => new[] { "kdialog", "zenity" }.FirstOrDefault(Exists));
+    /// <summary>"qt" when python3 with a Qt binding can run hooks/approval-dialog.py, else kdialog / zenity, else null.</summary>
+    private static readonly Lazy<string?> DialogTool = new(() =>
+    {
+        if (QtDialogScript() is not null && Exists("python3") && PythonHas("PyQt6", "PySide6", "PyQt5")) return "qt";
+        return new[] { "kdialog", "zenity" }.FirstOrDefault(Exists);
+    });
+
+    private static string? QtDialogScript()
+    {
+        foreach (var c in new[] { Path.Combine(AppContext.BaseDirectory, "..", "..", "hooks", "approval-dialog.py"), Path.Combine(AppContext.BaseDirectory, "..", "hooks", "approval-dialog.py"), Path.Combine(AppContext.BaseDirectory, "hooks", "approval-dialog.py") })
+            if (File.Exists(c)) return Path.GetFullPath(c);
+        return null;
+    }
+
+    private static bool PythonHas(params string[] modules)
+    {
+        try
+        {
+            var code = "import importlib.util, sys\nsys.exit(0 if any(importlib.util.find_spec(m) for m in " + Json.Serialize(modules) + ") else 1)";
+            var psi = new ProcessStartInfo("python3") { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+            psi.ArgumentList.Add("-c"); psi.ArgumentList.Add(code);
+            using var p = Process.Start(psi); p?.WaitForExit(5000);
+            var ok = p?.ExitCode == 0;
+            Log.Info(ok ? "Approval popup: Qt dialog (python3)" : "Approval popup: no Python Qt binding; using kdialog/zenity/notification");
+            return ok;
+        }
+        catch { return false; }
+    }
 
     private async Task ShowAsync(PendingApproval p)
     {
@@ -59,8 +88,17 @@ public sealed class ApprovalNotifier
         var title = $"{who} asks permission — {project}";
         var previousActive = (await WindowFocuser.RunAsync("xdotool", "getactivewindow")).Trim();
 
-        var psi = new ProcessStartInfo(tool) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
-        if (tool == "kdialog")
+        var psi = new ProcessStartInfo(tool == "qt" ? "python3" : tool) { RedirectStandardOutput = true, RedirectStandardError = true, RedirectStandardInput = tool == "qt", UseShellExecute = false };
+        string? stdinJson = null;
+        if (tool == "qt")
+        {
+            psi.ArgumentList.Add(QtDialogScript()!);
+            var desc = p.ToolInput.ValueKind == System.Text.Json.JsonValueKind.Object ? p.ToolInput.Str("description") : null;
+            var command = Body(p);
+            if (desc is not null && command.EndsWith("\n— " + desc.Trim(), StringComparison.Ordinal)) command = command[..^("\n— " + desc.Trim()).Length];
+            stdinJson = Json.Serialize(new { provider = who, project, tool = p.ToolName, command, description = desc, hold_seconds = HoldSeconds(), received_at = p.ReceivedAt.ToUniversalTime().ToString("o"), screen = Screen });
+        }
+        else if (tool == "kdialog")
         {
             var html = $"""
                 <html><body style="font-size:12pt">
@@ -70,7 +108,8 @@ public sealed class ApprovalNotifier
                 <p style="color:#8a93a6; font-size:10pt">Deck keys or these buttons decide. No answer within {HoldSeconds()} s → the app shows its own prompt.</p>
                 </body></html>
                 """;
-            foreach (var a in new[] { "--title", title, "--icon", "dialog-question", "--geometry", "780x360",
+            var geometry = await GeometryOnScreenAsync(780, 360);
+            foreach (var a in new[] { "--title", title, "--icon", "dialog-question", "--geometry", geometry,
                                       "--yes-label", "Approve", "--no-label", "Deny", "--cancel-label", "Decide in the app", "--yesnocancel", html })
                 psi.ArgumentList.Add(a);
         }
@@ -85,19 +124,60 @@ public sealed class ApprovalNotifier
         var proc = Process.Start(psi);
         if (proc is null) return;
         _open[p.Id] = (proc, 0);
-        _ = KeepAboveWithoutFocusAsync(proc, previousActive);
+        if (stdinJson is not null)
+        {
+            await proc.StandardInput.WriteAsync(stdinJson);
+            proc.StandardInput.Close();
+        }
+        else _ = KeepAboveWithoutFocusAsync(proc, previousActive);   // the Qt dialog handles on-top / no-focus itself
 
         var stdout = await proc.StandardOutput.ReadToEndAsync();
         await proc.WaitForExitAsync();
         if (!_open.TryRemove(p.Id, out _)) return;   // closed by us: the request was already answered elsewhere
         if (p.IsResolved) return;
 
-        var outcome = tool == "kdialog"
+        var outcome = tool is "kdialog" or "qt"
             ? proc.ExitCode switch { 0 => ApprovalOutcome.Allow, 1 => ApprovalOutcome.Deny, _ => ApprovalOutcome.Release }
             : stdout.Contains("Decide", StringComparison.OrdinalIgnoreCase) ? ApprovalOutcome.Release
               : proc.ExitCode switch { 0 => ApprovalOutcome.Allow, 1 => ApprovalOutcome.Deny, _ => ApprovalOutcome.Release };
         _approvals.Resolve(p, outcome, outcome == ApprovalOutcome.Deny ? "Denied from the desktop dialog" : null);
         Log.Info($"{outcome} from dialog: {p.Summary}");
+    }
+
+    /// <summary>kdialog geometry (WxH+X+Y) centred on the configured monitor, from xrandr; falls back to size only.</summary>
+    private async Task<string> GeometryOnScreenAsync(int w, int h)
+    {
+        try
+        {
+            var monitors = new List<(int W, int H, int X, int Y, bool Primary)>();
+            foreach (var line in (await WindowFocuser.RunAsync("xrandr", "--query")).Split('\n'))
+            {
+                if (!line.Contains(" connected ")) continue;
+                var m = System.Text.RegularExpressions.Regex.Match(line, @"(\d+)x(\d+)\+(\d+)\+(\d+)");
+                if (m.Success) monitors.Add((int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value), int.Parse(m.Groups[3].Value), int.Parse(m.Groups[4].Value), line.Contains(" primary ")));
+            }
+            if (monitors.Count == 0) return $"{w}x{h}";
+            var pick = Screen switch
+            {
+                "primary" => monitors.FirstOrDefault(m => m.Primary) is { W: > 0 } pm ? pm : monitors[0],
+                "mouse" => await MonitorUnderMouseAsync(monitors),
+                _ => monitors.OrderBy(m => m.X).ThenBy(m => m.Y).ElementAt(monitors.Count / 2),
+            };
+            return $"{w}x{h}+{pick.X + (pick.W - w) / 2}+{pick.Y + (pick.H - h) / 2}";
+        }
+        catch { return $"{w}x{h}"; }
+    }
+
+    private static async Task<(int W, int H, int X, int Y, bool Primary)> MonitorUnderMouseAsync(List<(int W, int H, int X, int Y, bool Primary)> monitors)
+    {
+        var loc = await WindowFocuser.RunAsync("xdotool", "getmouselocation");
+        var mx = System.Text.RegularExpressions.Regex.Match(loc, @"x:(\d+) y:(\d+)");
+        if (mx.Success)
+        {
+            int x = int.Parse(mx.Groups[1].Value), y = int.Parse(mx.Groups[2].Value);
+            foreach (var m in monitors) if (x >= m.X && x < m.X + m.W && y >= m.Y && y < m.Y + m.H) return m;
+        }
+        return monitors[0];
     }
 
     /// <summary>Keeps the dialog above other windows and gives keyboard focus back to the window the user was using.</summary>

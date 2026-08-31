@@ -54,6 +54,7 @@ public sealed class CodexRolloutCollector
         public DateTimeOffset LastRateLimitsAt;
         public JsonElement? RateLimits;
         public long ContextWindowFromTask;
+        public string? TurnMode;               // collaboration_mode_kind of the running turn ("plan", "default", …)
         public string Partial = "";
         /// <summary>Saw a task_started that is not an external-agent import (the desktop app mirrors Claude transcripts as threads).</summary>
         public bool HasRealTurn;
@@ -233,6 +234,7 @@ public sealed class CodexRolloutCollector
                         t.HasRealTurn = true;
                         t.State = AgentState.Working; t.StateSince = ts; t.Detail = null; t.LastActivity = ts;
                         t.ContextWindowFromTask = payload.Value.Long("model_context_window") ?? t.ContextWindowFromTask;
+                        t.TurnMode = payload.Value.Str("collaboration_mode_kind");
                         break;
                     case "task_complete":
                         // a failed turn is also a task_complete, with terminal error details attached
@@ -241,6 +243,17 @@ public sealed class CodexRolloutCollector
                         {
                             t.State = AgentState.Error;
                             t.Detail = err.Str("message") ?? "turn failed";
+                        }
+                        // a plan-mode turn completing means the plan (or its questions) awaits the user —
+                        // the desktop app delivers it through the plan UI, so last_agent_message is empty
+                        else if (t.TurnMode == "plan")
+                        {
+                            t.State = AgentState.Waiting; t.Detail = "plan ready";
+                        }
+                        // best-effort: a turn whose final message ends on a question is asking for direction
+                        else if (EndsWithQuestion(payload.Value.Str("last_agent_message")))
+                        {
+                            t.State = AgentState.Waiting; t.Detail = "question";
                         }
                         else { t.State = AgentState.Idle; t.Detail = null; }
                         t.StateSince = ts; t.LastActivity = ts; break;
@@ -298,6 +311,19 @@ public sealed class CodexRolloutCollector
                 t.LastActivity = ts;
                 break;
         }
+    }
+
+    /// <summary>True when the last non-empty line of the message ends with a question mark (markdown trimmed).</summary>
+    internal static bool EndsWithQuestion(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message)) return false;
+        foreach (var raw in message.Split('\n').Reverse())
+        {
+            var line = raw.TrimEnd().TrimEnd('*', '_', '`', ')', '"', '\'');
+            if (line.Length == 0) continue;
+            return line.EndsWith('?');
+        }
+        return false;
     }
 
     private static string Shorten(string s, int max)

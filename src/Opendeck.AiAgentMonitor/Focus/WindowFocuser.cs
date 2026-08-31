@@ -20,6 +20,7 @@ public static class WindowFocuser
     {
         try
         {
+            if (!dryRun) await TrySelectKonsoleTabAsync(agent);   // before matching: selecting the tab retitles the window
             var windows = await ListWindowsAsync();
             var win = Pick(agent, windows);
             if (win is null && agent.Host == "App" && !dryRun)
@@ -37,7 +38,7 @@ public static class WindowFocuser
         catch (Exception ex) { Log.Warn($"focus failed: {ex.Message}"); return false; }
     }
 
-    /// <summary>True when the agent's window is the active (focused) window right now.</summary>
+    /// <summary>True when the agent's window is the active (focused) window right now — and, in Konsole, its tab is the current one.</summary>
     public static async Task<bool> IsAgentWindowActiveAsync(AgentInfo agent)
     {
         try
@@ -45,9 +46,64 @@ public static class WindowFocuser
             var win = Pick(agent, await ListWindowsAsync());
             if (win is null) return false;
             var active = (await RunAsync("xdotool", "getactivewindow")).Trim();
-            return long.TryParse(active, out var id) && id == win.Xid;
+            if (!long.TryParse(active, out var id) || id != win.Xid) return false;
+            var tab = await FindKonsoleTabAsync(agent);
+            return tab is null || tab.IsCurrent;
         }
         catch { return false; }
+    }
+
+    // ---- Konsole tabs ---------------------------------------------------------------------
+    // Konsole hosts many tabs (sessions) in one window; raising the window shows whichever tab is
+    // current. Its per-process D-Bus service (org.kde.konsole-<pid>) maps sessions to shell pids,
+    // so the tab whose shell is an ancestor of the agent can be selected before the window is raised.
+
+    private sealed record KonsoleTab(string Service, string WindowPath, string SessionId, bool IsCurrent);
+
+    private static async Task<KonsoleTab?> FindKonsoleTabAsync(AgentInfo agent)
+    {
+        try
+        {
+            if (agent.Pid is not { } pid) return null;
+            var chain = new List<int> { pid };
+            var konsole = 0;
+            foreach (var (apid, comm) in ProcUtil.Ancestors(pid))
+            {
+                if (comm == "konsole") { konsole = apid; break; }
+                chain.Add(apid);
+            }
+            if (konsole == 0) return null;
+
+            var service = $"org.kde.konsole-{konsole}";
+            var paths = (await RunAsync("qdbus6", service)).Split('\n').Select(l => l.Trim()).ToList();
+            string? sessionId = null;
+            foreach (var s in paths.Where(p => p.StartsWith("/Sessions/", StringComparison.Ordinal)))
+            {
+                var shell = (await RunAsync("qdbus6", service, s, "org.kde.konsole.Session.processId")).Trim();
+                if (int.TryParse(shell, out var shellPid) && chain.Contains(shellPid)) { sessionId = s["/Sessions/".Length..]; break; }
+            }
+            if (sessionId is null) return null;
+
+            foreach (var w in paths.Where(p => p.StartsWith("/Windows/", StringComparison.Ordinal) && p.Length > "/Windows/".Length))
+            {
+                var ids = (await RunAsync("qdbus6", service, w, "org.kde.konsole.Window.sessionList"))
+                    .Split('\n', ' ').Select(x => x.Trim()).Where(x => x.Length > 0);
+                if (!ids.Contains(sessionId)) continue;
+                var current = (await RunAsync("qdbus6", service, w, "org.kde.konsole.Window.currentSession")).Trim();
+                return new KonsoleTab(service, w, sessionId, current == sessionId);
+            }
+        }
+        catch (Exception ex) { Log.Debug($"konsole tab lookup: {ex.Message}"); }
+        return null;
+    }
+
+    private static async Task TrySelectKonsoleTabAsync(AgentInfo agent)
+    {
+        var tab = await FindKonsoleTabAsync(agent);
+        if (tab is null || tab.IsCurrent) return;
+        await RunAsync("qdbus6", tab.Service, tab.WindowPath, "org.kde.konsole.Window.setCurrentSession", tab.SessionId);
+        Log.Info($"Konsole: selected tab (session {tab.SessionId}) in {tab.Service}{tab.WindowPath}");
+        await Task.Delay(120);   // let the window title follow the new tab
     }
 
     /// <summary>Activates a window by X id (hex or decimal). Diagnostic entry point (`--activate`).</summary>

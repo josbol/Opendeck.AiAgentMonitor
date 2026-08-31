@@ -2,7 +2,7 @@
 	"Name": "AI Agent Monitor",
 	"Description": "Live status of Claude Code and Codex sessions (working / needs you / idle), subscription usage, approve or deny permission requests from the deck, and one-press jump to the agent's window.",
 	"Author": "Jos Bol",
-	"Version": "0.2.3",
+	"Version": "0.2.4",
 	"Icon": "icons/plugin",
 	"Category": "AI Agent Monitor",
 	"CategoryIcon": "icons/plugin",

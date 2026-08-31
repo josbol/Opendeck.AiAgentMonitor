@@ -72,6 +72,44 @@ public class ApprovalTests
     }
 
     [Fact]
+    public async Task InteractiveToolsPassStraightThroughWhileOthersAreHeld()
+    {
+        var reg = new ApprovalRegistry();
+        using var server = new HookServer(reg) { HoldTime = () => TimeSpan.FromMilliseconds(400) };
+        int port;
+        using (var l = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0))
+        {
+            l.Start(); port = ((System.Net.IPEndPoint)l.LocalEndpoint).Port; l.Stop();
+        }
+        server.Start(port);
+        using var http = new HttpClient();
+        for (var i = 0; ; i++)
+        {
+            try { await http.GetAsync($"http://127.0.0.1:{port}/health"); break; }
+            catch when (i < 50) { await Task.Delay(100); }
+        }
+
+        // a question can only be answered in the terminal: not held, not registered
+        var question = """{"hook_event_name":"PermissionRequest","session_id":"s1","cwd":"/p","tool_name":"AskUserQuestion","tool_input":{"questions":[]}}""";
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var resp = await http.PostAsync($"http://127.0.0.1:{port}/hooks/claude", new StringContent(question));
+        sw.Stop();
+        Assert.Equal(System.Net.HttpStatusCode.OK, resp.StatusCode);
+        Assert.Empty(await resp.Content.ReadAsStringAsync());   // empty reply → normal terminal dialog
+        Assert.True(sw.Elapsed < TimeSpan.FromMilliseconds(300), $"question was held for {sw.Elapsed}");
+        Assert.Empty(reg.Pending);
+
+        // a Bash call is still held for the deck until the hold time passes
+        var bash = """{"hook_event_name":"PermissionRequest","session_id":"s1","cwd":"/p","tool_name":"Bash","tool_input":{"command":"ls"}}""";
+        sw.Restart();
+        resp = await http.PostAsync($"http://127.0.0.1:{port}/hooks/claude", new StringContent(bash));
+        sw.Stop();
+        Assert.Empty(await resp.Content.ReadAsStringAsync());
+        Assert.True(sw.Elapsed >= TimeSpan.FromMilliseconds(350), $"bash was released after only {sw.Elapsed}");
+        Assert.Empty(reg.Pending);
+    }
+
+    [Fact]
     public void CodexTrustHashMatchesCodexFingerprint()
     {
         // Expected value produced by the reference implementation of codex-rs hook_hash + version_for_toml

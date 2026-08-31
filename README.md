@@ -7,7 +7,7 @@ Shows what your AI coding agents are doing on a stream deck (built for the Ulanz
   run in Rider, a terminal or the Codex desktop app. Green = working, amber = *needs you* (permission
   prompt, question, dialog), red = *error* (the turn died on an API error: no model capacity, rate limit,
   auth), grey = idle. Shows project, host, elapsed time, model and context-window use.
-  **Press → the agent's window comes to the front.**
+  **Press → the agent's window comes to the front** (in Konsole, the agent's tab is selected too).
 - **Usage keys** — Claude (5 h / 7 d windows, Max/Pro) and Codex (weekly / 5 h) subscription usage with
   time-to-reset. Press → opens the usage page.
 - **Overview** — counts of working / waiting / idle agents, per provider. Press → jump to the agent that needs you.
@@ -17,7 +17,9 @@ Shows what your AI coding agents are doing on a stream deck (built for the Ulanz
 - **Select dial + Selected agent** — turn a knob to browse agents, press it to focus the selected one.
 - **Approve / Deny** — when Claude Code (or Codex) asks for permission, the request is held for the deck: the agent
   key turns amber with **APPROVE?** and the tool call (e.g. `Bash: git push origin main`), the selection jumps to it,
-  and the Approve/Deny keys (also the two side buttons) answer it. Pressing the agent key, the dial or the Selected
+  and the Approve/Deny keys (also the two side buttons) answer it. Interactive prompts that only the terminal can
+  answer — a question's options, a plan review — are never held: they reach the terminal immediately and the key
+  goes amber *needs you* instead. Pressing the agent key, the dial or the Selected
   agent key instead hands the request back to the terminal (its normal dialog appears) and focuses the window.
   Because the app's own prompt is not rendered while the hook holds the request, the full request is also shown
   on screen: a **Qt dialog** (`hooks/approval-dialog.py`, needs `python3` with PyQt6, PySide6 or PyQt5) with the

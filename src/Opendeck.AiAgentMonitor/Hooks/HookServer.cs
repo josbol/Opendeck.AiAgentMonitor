@@ -114,6 +114,16 @@ public sealed class HookServer : IDisposable
         var sessionId = root.Str("session_id") ?? root.Str("thread_id") ?? "";
         var tool = root.Str("tool_name") ?? "tool";
         var input = root.Prop("tool_input") ?? default;
+
+        // interactive tools (a question's options, a plan review) can only be answered in the
+        // terminal — approve/deny is meaningless and holding them just delays the prompt; the
+        // session's waiting state alerts the deck instead
+        if (tool is "AskUserQuestion" or "ExitPlanMode" or "EnterPlanMode")
+        {
+            Log.Info($"{tool} for {provider}:{sessionId} handed straight to the terminal (interactive)");
+            res.StatusCode = 200; res.Close();
+            return;
+        }
         var pending = new PendingApproval
         {
             Id = Guid.NewGuid().ToString("N")[..12],

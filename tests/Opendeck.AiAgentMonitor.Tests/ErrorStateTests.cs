@@ -107,6 +107,49 @@ public class ErrorStateTests : IDisposable
         Assert.Equal(AgentState.Idle, t.State);
     }
 
+    // ---- Codex: plan-mode completions and question endings wait on the user ------------------
+
+    private const string CodexPlanStarted = """{"timestamp":"2026-08-31T14:16:32.100Z","type":"event_msg","payload":{"type":"task_started","turn_id":"01a05820-0000-7000-8000-000000000001","started_at":1788185792,"model_context_window":258400,"collaboration_mode_kind":"plan"}}""";
+    private const string CodexPlanDone = """{"timestamp":"2026-08-31T14:54:34.500Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"01a05820-0000-7000-8000-000000000001","last_agent_message":"","started_at":1788185792,"completed_at":1788188074}}""";
+    private const string CodexUserMsg = """{"timestamp":"2026-08-31T14:58:07.000Z","type":"event_msg","payload":{"type":"user_message","message":"PLEASE IMPLEMENT THIS PLAN:\n# Plan"}}""";
+
+    [Fact]
+    public void CodexPlanModeCompletionWaitsForTheUser()
+    {
+        var t = new CodexRolloutCollector.Thread { Path = "x" };
+        CodexRolloutCollector.Apply(t, CodexPlanStarted);
+        CodexRolloutCollector.Apply(t, CodexPlanDone);
+        Assert.Equal(AgentState.Waiting, t.State);
+        Assert.Equal("plan ready", t.Detail);
+        CodexRolloutCollector.Apply(t, CodexUserMsg);
+        Assert.Equal(AgentState.Working, t.State);
+    }
+
+    [Fact]
+    public void CodexQuestionEndingWaitsButPlainEndingIdles()
+    {
+        static CodexRolloutCollector.Thread Run(string lastMessage)
+        {
+            var t = new CodexRolloutCollector.Thread { Path = "x" };
+            CodexRolloutCollector.Apply(t, CodexStarted);
+            var msg = System.Text.Json.JsonSerializer.Serialize(lastMessage);
+            CodexRolloutCollector.Apply(t, """{"timestamp":"2026-08-31T15:00:00.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"01a053b4-e0eb-74f3-ae26-8ba4e8233795","last_agent_message":""" + msg + "}}");
+            return t;
+        }
+        Assert.Equal((AgentState.Waiting, "question"), (Run("Done.\n\nShould I also update the docs?").State, Run("x?").Detail));
+        Assert.Equal(AgentState.Waiting, Run("Which one do you prefer?**").State);   // trailing markdown
+        Assert.Equal(AgentState.Idle, Run("All tests pass.").State);
+        Assert.Equal(AgentState.Idle, Run("Is it fast? Yes.\nDone.").State);
+    }
+
+    [Fact]
+    public void EndsWithQuestionHandlesEdges()
+    {
+        Assert.True(CodexRolloutCollector.EndsWithQuestion("Proceed?\n\n"));
+        Assert.False(CodexRolloutCollector.EndsWithQuestion(null));
+        Assert.False(CodexRolloutCollector.EndsWithQuestion("  \n "));
+    }
+
     private void WriteSession(string status, long updatedAtMs)
     {
         var pid = Environment.ProcessId;

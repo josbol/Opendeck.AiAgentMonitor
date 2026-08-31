@@ -240,8 +240,10 @@ public sealed class KeyRenderer
         var glyph = allow ? "✓" : "✕";
         if (p is null)
         {
-            DrawText(c, glyph, Size / 2f, 78, 44, Card, bold: true, align: SKTextAlign.Center);
-            DrawText(c, allow ? "approve" : "deny", Size / 2f, 104, 12, Idle, align: SKTextAlign.Center);
+            // dim but clearly alive: an all-dark key reads as dead when a request just vanished
+            FillRound(c, new SKRect(4, 4, Size - 4, Size - 4), 8, Card);
+            DrawText(c, glyph, Size / 2f, 78, 44, Idle, bold: true, align: SKTextAlign.Center);
+            DrawText(c, allow ? "approve" : "deny", Size / 2f, 104, 12, Muted, align: SKTextAlign.Center);
             DrawText(c, "no request", Size / 2f, 124, 10, Idle, align: SKTextAlign.Center);
             return Encode(s);
         }

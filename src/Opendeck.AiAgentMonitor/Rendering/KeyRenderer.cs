@@ -68,9 +68,9 @@ public sealed class KeyRenderer
         var right = index is not null && total is not null ? $"{index}/{total}" : a.Host;
         DrawText(c, right, Size - 8, 17, 10, bandText, align: SKTextAlign.Right);
 
-        // name (+ session title in the selected view, unless a request needs the room)
+        // name (+ session title in the selected view, unless a request or an error needs the room)
         DrawFitted(c, a.ProjectName, Size / 2f, 56, 17, Text, bold: true, maxWidth: Size - 16);
-        var showTitle = a.Title is not null && index is not null && a.Approval is null;
+        var showTitle = a.Title is not null && index is not null && a.Approval is null && a.State != AgentState.Error;
         if (showTitle) DrawFitted(c, a.Title!, Size / 2f, 72, 10, Muted, maxWidth: Size - 16);
 
         // status line
@@ -80,10 +80,11 @@ public sealed class KeyRenderer
             AgentState.Working => ($"working {since}", Working),
             AgentState.Waiting when a.Approval is not null => ("APPROVE?", Waiting),
             AgentState.Waiting => ("NEEDS YOU", Waiting),
+            AgentState.Error => ("ERROR", Bad),
             AgentState.Idle => ($"idle {since}", Muted),
             _ => ("ended", Ended),
         };
-        DrawText(c, word, Size / 2f, showTitle ? 92 : 84, a.State == AgentState.Waiting ? 16 : 13, wordColor, bold: a.State == AgentState.Waiting, align: SKTextAlign.Center);
+        DrawText(c, word, Size / 2f, showTitle ? 92 : 84, a.NeedsAttention ? 16 : 13, wordColor, bold: a.NeedsAttention, align: SKTextAlign.Center);
 
         // detail
         var detail = a.Detail;
@@ -92,6 +93,7 @@ public sealed class KeyRenderer
             // the full request, wrapped: the app's own prompt is not visible while the hook holds it
             DrawWrapped(c, Hooks.ApprovalNotifier.FullText(req).Replace(":\n", ": "), 8, 96, 9, Waiting, Size - 16, index is not null ? 3 : 2);
         }
+        else if (a.State == AgentState.Error && detail is not null) DrawWrapped(c, detail, 8, 96, 9, Bad, Size - 16, index is not null ? 3 : 2);
         else if (a.State == AgentState.Waiting && detail is not null) DrawFitted(c, $"{detail} · {since}", Size / 2f, 106, 10, Waiting, maxWidth: Size - 16);
         else if (detail is not null) DrawFitted(c, detail, Size / 2f, 100, 10, Muted, maxWidth: Size - 16);
         else if (index is null && a.Host.Length > 0 && a.SubAgents > 0) DrawText(c, $"+{a.SubAgents} sub", Size / 2f, 100, 10, Muted, align: SKTextAlign.Center);
@@ -110,6 +112,7 @@ public sealed class KeyRenderer
         }
 
         if (a.State == AgentState.Waiting) Border(c, Waiting, 5);
+        else if (a.State == AgentState.Error) Border(c, Bad, 5);
         return Encode(s);
     }
 
@@ -166,29 +169,31 @@ public sealed class KeyRenderer
     {
         using var s = NewSurface(); var c = s.Canvas;
         var working = snap.Count(AgentState.Working); var waiting = snap.Count(AgentState.Waiting); var idle = snap.Count(AgentState.Idle);
+        var errors = snap.Count(AgentState.Error);
+        var attention = waiting + errors;
         DrawText(c, "AGENTS", Size / 2f, 18, 11, Muted, bold: true, align: SKTextAlign.Center);
-        if (working + waiting + idle == 0)
+        if (working + attention + idle == 0)
         {
             DrawText(c, "none", Size / 2f, 84, 20, Idle, bold: true, align: SKTextAlign.Center);
             DrawText(c, "no sessions running", Size / 2f, 106, 10, Muted, align: SKTextAlign.Center);
             return Encode(s);
         }
-        void Cell(float cx, int n, string label, SKColor color)
+        void Cell(float cx, int n, string label, SKColor color, bool highlight = false)
         {
-            FillRound(c, new SKRect(cx - 20, 30, cx + 20, 86), 6, waiting > 0 && color == Waiting ? Waiting : Card);
-            var fg = waiting > 0 && color == Waiting ? SKColors.Black : (n > 0 ? color : Idle);
+            FillRound(c, new SKRect(cx - 20, 30, cx + 20, 86), 6, highlight ? color : Card);
+            var fg = highlight ? (color == Bad ? SKColors.White : SKColors.Black) : (n > 0 ? color : Idle);
             DrawText(c, n.ToString(), cx, 64, 28, fg, bold: true, align: SKTextAlign.Center);
             DrawText(c, label, cx, 80, 9, fg, align: SKTextAlign.Center);
         }
         Cell(26, working, "run", Working);
-        Cell(72, waiting, "wait", Waiting);
+        Cell(72, attention, waiting == 0 && errors > 0 ? "error" : "wait", waiting > 0 ? Waiting : Bad, attention > 0);
         Cell(118, idle, "idle", Idle);
         DrawText(c, $"Claude {snap.Count(Provider.Claude)}", 8, 110, 11, ClaudeAccent, bold: true);
         DrawText(c, $"Codex {snap.Count(Provider.Codex)}", Size - 8, 110, 11, CodexAccent, bold: true, align: SKTextAlign.Right);
         var line = string.Join("  ", new[] { snap.Claude?.Short ?? snap.Claude?.Long, snap.Codex?.Short ?? snap.Codex?.Long }
             .Select((w, i) => w is null ? null : $"{(i == 0 ? "C" : "X")} {w.UsedPct:0}%").Where(x => x is not null));
         DrawText(c, line, Size / 2f, 132, 10, Muted, align: SKTextAlign.Center);
-        if (waiting > 0) Border(c, Waiting, 4);
+        if (attention > 0) Border(c, waiting > 0 ? Waiting : Bad, 4);
         return Encode(s);
     }
 
@@ -196,13 +201,17 @@ public sealed class KeyRenderer
     {
         using var s = NewSurface(); var c = s.Canvas;
         var waiting = snap.Count(AgentState.Waiting); var working = snap.Count(AgentState.Working); var idle = snap.Count(AgentState.Idle);
-        if (waiting > 0)
+        var errors = snap.Count(AgentState.Error);
+        var attention = waiting + errors;
+        var fg = waiting > 0 ? SKColors.Black : SKColors.White; // black on amber, white on red
+        if (attention > 0)
         {
-            Fill(c, new SKRect(0, 0, Size, Size), Waiting);
-            DrawText(c, waiting.ToString(), Size / 2f, 82, 60, SKColors.Black, bold: true, align: SKTextAlign.Center);
-            DrawText(c, waiting == 1 ? "NEEDS YOU" : "NEED YOU", Size / 2f, 108, 14, SKColors.Black, bold: true, align: SKTextAlign.Center);
-            var who = snap.Ordered().FirstOrDefault(a => a.State == AgentState.Waiting);
-            if (who is not null) DrawFitted(c, who.ProjectName, Size / 2f, 126, 11, SKColors.Black, maxWidth: Size - 12);
+            Fill(c, new SKRect(0, 0, Size, Size), waiting > 0 ? Waiting : Bad);
+            DrawText(c, attention.ToString(), Size / 2f, 82, 60, fg, bold: true, align: SKTextAlign.Center);
+            var label = waiting > 0 ? (attention == 1 ? "NEEDS YOU" : "NEED YOU") : (errors == 1 ? "ERROR" : "ERRORS");
+            DrawText(c, label, Size / 2f, 108, 14, fg, bold: true, align: SKTextAlign.Center);
+            var who = snap.Ordered().FirstOrDefault(a => a.NeedsAttention);
+            if (who is not null) DrawFitted(c, who.ProjectName, Size / 2f, 126, 11, fg, maxWidth: Size - 12);
         }
         else
         {
@@ -219,7 +228,7 @@ public sealed class KeyRenderer
             }
             else DrawText(c, "quiet", Size / 2f, 96, 16, Idle, align: SKTextAlign.Center);
         }
-        DrawText(c, back ? "◀ back" : "▶ monitor", Size / 2f, 140, 9, waiting > 0 ? SKColors.Black : Muted, align: SKTextAlign.Center);
+        DrawText(c, back ? "◀ back" : "▶ monitor", Size / 2f, 140, 9, attention > 0 ? fg : Muted, align: SKTextAlign.Center);
         return Encode(s);
     }
 
@@ -272,7 +281,7 @@ public sealed class KeyRenderer
         return "data:image/png;base64," + Convert.ToBase64String(data.AsSpan());
     }
 
-    private static SKColor StatusColor(AgentState st) => st switch { AgentState.Working => Working, AgentState.Waiting => Waiting, AgentState.Idle => Idle, _ => Ended };
+    private static SKColor StatusColor(AgentState st) => st switch { AgentState.Working => Working, AgentState.Waiting => Waiting, AgentState.Error => Bad, AgentState.Idle => Idle, _ => Ended };
     private static SKColor Threshold(double pct, double warn, double bad) => pct >= bad ? Bad : pct >= warn ? Warn : Good;
 
     private static void Fill(SKCanvas c, SKRect r, SKColor color)

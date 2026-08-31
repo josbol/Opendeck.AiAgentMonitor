@@ -8,6 +8,8 @@ public enum AgentState
     Working,
     /// <summary>The agent is blocked on the user: permission prompt, question, dialog.</summary>
     Waiting,
+    /// <summary>The last turn died on an API error (no capacity, rate limit, auth) and nothing has run since.</summary>
+    Error,
     /// <summary>The agent finished its turn and is waiting for the next prompt.</summary>
     Idle,
     /// <summary>The session/process is gone (kept briefly for display).</summary>
@@ -38,6 +40,9 @@ public sealed record AgentInfo
     public PendingApproval? Approval { get; init; }
 
     public string ProjectName => string.IsNullOrEmpty(Cwd) ? Name : Path.GetFileName(Cwd.TrimEnd('/')) is { Length: > 0 } n ? n : Cwd;
+
+    /// <summary>True when the deck should pull the user in: blocked on input, or the turn died on an error.</summary>
+    public bool NeedsAttention => State is AgentState.Waiting or AgentState.Error;
 }
 
 public sealed record QuotaWindow(string Label, double UsedPct, DateTimeOffset? ResetsAt, string? Scope = null)
@@ -74,11 +79,11 @@ public sealed record Snapshot
     /// <summary>Attention-first ordering used by the auto slots and the dial.</summary>
     public IReadOnlyList<AgentInfo> Ordered(Provider? filter = null)
     {
-        static int Rank(AgentState s) => s switch { AgentState.Waiting => 0, AgentState.Working => 1, AgentState.Idle => 2, _ => 3 };
+        static int Rank(AgentState s) => s switch { AgentState.Waiting => 0, AgentState.Error => 1, AgentState.Working => 2, AgentState.Idle => 3, _ => 4 };
         return Live
             .Where(a => filter is null || a.Provider == filter)
             .OrderBy(a => Rank(a.State))
-            .ThenBy(a => a.State == AgentState.Waiting ? a.StateSince : DateTimeOffset.MaxValue) // longest-waiting first
+            .ThenBy(a => a.NeedsAttention ? a.StateSince : DateTimeOffset.MaxValue) // longest-waiting first
             .ThenByDescending(a => a.LastActivity)
             .ToList();
     }

@@ -33,7 +33,7 @@ public sealed class CodexRolloutCollector
     public string SessionsDir => _sessionsDir;
     public ProviderQuota? LatestQuota { get; private set; }
 
-    private sealed class Thread
+    internal sealed class Thread
     {
         public required string Path;
         public long Offset;
@@ -149,8 +149,9 @@ public sealed class CodexRolloutCollector
         _lastScan = DateTime.UtcNow;
         if (!Directory.Exists(_sessionsDir)) return;
         var cutoff = now - IdleTimeout - TimeSpan.FromHours(1);
-        // Only the last few day directories can hold recent files.
-        for (var d = 0; d < 4; d++)
+        // Only the last few day directories can hold recent files; desktop-app collab threads
+        // stay loaded (and written) for days, so look well past the idle cutoff.
+        for (var d = 0; d < 8; d++)
         {
             var day = now.AddDays(-d);
             var dir = Path.Combine(_sessionsDir, day.ToString("yyyy"), day.ToString("MM"), day.ToString("dd"));
@@ -191,7 +192,7 @@ public sealed class CodexRolloutCollector
         catch (Exception ex) { Log.Debug($"codex tail {t.Path}: {ex.Message}"); }
     }
 
-    private static void Apply(Thread t, string line)
+    internal static void Apply(Thread t, string line)
     {
         using var doc = JsonDocument.Parse(line);
         var root = doc.RootElement;
@@ -234,7 +235,15 @@ public sealed class CodexRolloutCollector
                         t.ContextWindowFromTask = payload.Value.Long("model_context_window") ?? t.ContextWindowFromTask;
                         break;
                     case "task_complete":
-                        t.State = AgentState.Idle; t.StateSince = ts; t.Detail = null; t.LastActivity = ts; break;
+                        // a failed turn is also a task_complete, with terminal error details attached
+                        // (EventMsg::Error itself is never persisted to the rollout)
+                        if (payload.Value.Obj("error") is { } err)
+                        {
+                            t.State = AgentState.Error;
+                            t.Detail = err.Str("message") ?? "turn failed";
+                        }
+                        else { t.State = AgentState.Idle; t.Detail = null; }
+                        t.StateSince = ts; t.LastActivity = ts; break;
                     case "turn_aborted":
                         t.State = AgentState.Idle; t.StateSince = ts; t.Detail = "aborted"; t.LastActivity = ts; break;
                     case "user_message":
@@ -244,7 +253,7 @@ public sealed class CodexRolloutCollector
                             var m = payload.Value.Str("message");
                             if (!string.IsNullOrWhiteSpace(m)) t.Title = Shorten(m, 24);
                         }
-                        if (t.State == AgentState.Waiting) { t.State = AgentState.Working; t.StateSince = ts; t.Detail = null; }
+                        if (t.State is AgentState.Waiting or AgentState.Error) { t.State = AgentState.Working; t.StateSince = ts; t.Detail = null; }
                         break;
                     case "token_count":
                         t.LastActivity = ts;

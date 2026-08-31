@@ -20,7 +20,7 @@ public sealed class AgentMonitor : IDisposable
     public ApprovalRegistry Approvals { get; } = new();
     public Snapshot Current { get; private set; } = Snapshot.Empty;
     public event Action<Snapshot>? Changed;
-    /// <summary>Raised when an agent enters the Waiting state (for alerts).</summary>
+    /// <summary>Raised when an agent enters the Waiting or Error state (for alerts).</summary>
     public event Action<AgentInfo>? AgentNeedsAttention;
 
     // settings
@@ -156,7 +156,7 @@ public sealed class AgentMonitor : IDisposable
             foreach (var a in agents)
             {
                 var prev = _lastStates.TryGetValue(a.Key, out var p) ? p : (AgentState?)null;
-                if (a.State == AgentState.Waiting && prev != AgentState.Waiting) AgentNeedsAttention?.Invoke(a);
+                if (a.NeedsAttention && prev is not (AgentState.Waiting or AgentState.Error)) AgentNeedsAttention?.Invoke(a);
                 _lastStates[a.Key] = a.State;
             }
             foreach (var k in _lastStates.Keys.Where(k => agents.All(a => a.Key != k)).ToList()) _lastStates.Remove(k);

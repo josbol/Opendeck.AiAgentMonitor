@@ -84,6 +84,11 @@ public sealed class ClaudeSessionCollector
 
         var transcript = ReadTranscript(sessionId, cwd, updatedAt.ToUnixTimeMilliseconds());
 
+        // the registry has no error notion: a turn killed by an API error (capacity, rate limit, auth)
+        // just goes back to "idle", so pick the error up from the transcript tail instead
+        var apiError = state == AgentState.Idle ? transcript?.ApiError : null;
+        if (apiError is not null) state = AgentState.Error;
+
         return new AgentInfo
         {
             Key = $"claude:{sessionId}",
@@ -92,13 +97,13 @@ public sealed class ClaudeSessionCollector
             Cwd = cwd,
             Host = host,
             State = state,
-            StateSince = statusUpdatedAt,
+            StateSince = apiError?.At ?? statusUpdatedAt,
             LastActivity = updatedAt,
             StartedAt = startedAt,
             Model = transcript?.Model,
             ContextTokens = transcript?.ContextTokens,
             ContextPct = transcript?.ContextPct,
-            Detail = waitingFor ?? (status is "shell" ? "shell" : status is "compacting" ? "compacting" : null),
+            Detail = apiError?.Text ?? waitingFor ?? (status is "shell" ? "shell" : status is "compacting" ? "compacting" : null),
             Title = transcript?.Title,
             Pid = pid,
             SessionId = sessionId,
@@ -110,7 +115,10 @@ public sealed class ClaudeSessionCollector
 
     // ---- transcript ---------------------------------------------------------------------
 
-    private sealed record TranscriptInfo(string? Model, long? ContextTokens, double? ContextPct, string? Title);
+    private sealed record TranscriptInfo(string? Model, long? ContextTokens, double? ContextPct, string? Title, ApiError? ApiError);
+
+    /// <summary>An API error that ended the last turn (isApiErrorMessage record still at the transcript tail).</summary>
+    public sealed record ApiError(string Text, DateTimeOffset? At);
 
     /// <summary>Claude Code stores transcripts at ~/.claude/projects/&lt;cwd with non-alnum → '-'&gt;/&lt;sessionId&gt;.jsonl</summary>
     public string TranscriptPath(string sessionId, string cwd)
@@ -151,9 +159,32 @@ public sealed class ClaudeSessionCollector
         }
 
         string? model = null; long? ctx = null; string? title = null;
+        ApiError? apiError = null; var newestTurnRecordSeen = false;
         for (var i = lines.Count - 1; i >= 0; i--)
         {
             var l = lines[i];
+            // the newest user/assistant record tells whether the last turn ended on an API error:
+            // Claude Code appends {"type":"assistant","isApiErrorMessage":true,...} and a later
+            // prompt or reply supersedes it
+            if (!newestTurnRecordSeen && (l.Contains("\"type\":\"user\"", StringComparison.Ordinal) || l.Contains("\"type\":\"assistant\"", StringComparison.Ordinal)))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(l);
+                    var r = doc.RootElement;
+                    if (r.Str("type") is "user" or "assistant" && r.Bool("isSidechain") != true && r.Bool("isMeta") != true)
+                    {
+                        newestTurnRecordSeen = true;
+                        if (r.Bool("isApiErrorMessage") == true)
+                        {
+                            var text = FirstText(r.Obj("message")) ?? r.Str("error") ?? "API error";
+                            var at = DateTimeOffset.TryParse(r.Str("timestamp"), out var ts) ? ts : (DateTimeOffset?)null;
+                            apiError = new ApiError(text, at);
+                        }
+                    }
+                }
+                catch { }
+            }
             if (ctx is null && l.Contains("\"usage\"", StringComparison.Ordinal) && l.Contains("\"assistant\"", StringComparison.Ordinal))
             {
                 try
@@ -161,7 +192,8 @@ public sealed class ClaudeSessionCollector
                     using var doc = JsonDocument.Parse(l);
                     var msg = doc.RootElement.Obj("message");
                     var usage = msg?.Obj("usage");
-                    if (usage is not null && doc.RootElement.Bool("isSidechain") != true)
+                    // error records carry a synthetic all-zero usage block; they must not reset the context bar
+                    if (usage is not null && doc.RootElement.Bool("isSidechain") != true && doc.RootElement.Bool("isApiErrorMessage") != true)
                     {
                         var u = usage.Value;
                         ctx = (u.Long("input_tokens") ?? 0) + (u.Long("cache_creation_input_tokens") ?? 0) + (u.Long("cache_read_input_tokens") ?? 0);
@@ -174,12 +206,20 @@ public sealed class ClaudeSessionCollector
             {
                 try { using var doc = JsonDocument.Parse(l); title = doc.RootElement.Str("title") ?? doc.RootElement.Str("aiTitle"); } catch { }
             }
-            if (ctx is not null && title is not null) break;
+            if (ctx is not null && title is not null && newestTurnRecordSeen) break;
         }
 
         var window = ContextWindowOverride > 0 ? ContextWindowOverride : GuessContextWindow(model);
         double? pct = ctx is null ? null : Math.Clamp(100.0 * ctx.Value / window, 0, 100);
-        return new TranscriptInfo(model, ctx, pct, title);
+        return new TranscriptInfo(model, ctx, pct, title, apiError);
+    }
+
+    private static string? FirstText(JsonElement? message)
+    {
+        if (message?.Obj("content") is not { ValueKind: JsonValueKind.Array } content) return null;
+        foreach (var part in content.EnumerateArray())
+            if (part.Str("type") == "text" && part.Str("text") is { Length: > 0 } t) return t;
+        return null;
     }
 
     private long _settingsWindowCache; private DateTime _settingsWindowAt;

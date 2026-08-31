@@ -14,7 +14,7 @@
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <!-- scripts/build.sh publishes self-contained single-file binaries per RID; keeping those flags out of the
          project file lets the test project reference this one normally -->
-    <Version>0.2.2</Version>
+    <Version>0.2.3</Version>
     <DebugType>embedded</DebugType>
   </PropertyGroup>
 

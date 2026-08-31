@@ -79,7 +79,7 @@ public sealed class OverviewAction : DeckAction
     {
         // jump to the agent that needs attention most, if any
         var target = Host.Monitor.Current.Ordered().FirstOrDefault();
-        if (target is not null && target.State == AgentState.Waiting) { await Host.FocusAsync(target); return; }
+        if (target is not null && target.NeedsAttention) { await Host.FocusAsync(target); return; }
         Host.RequestUsageRefresh();
         Host.Deck.ShowOk(Context);
     }

@@ -49,6 +49,12 @@ if (args.Length > 0 && args[0].StartsWith("--"))
             Save("sample-quota-codex", r.QuotaKey(Provider.Codex, new ProviderQuota { Provider = Provider.Codex, FetchedAt = now, Plan = "pro", Windows = new[] { new QuotaWindow("5h", 12, now.AddHours(3.1)), new QuotaWindow("7d", 58, now.AddDays(4)) } }, now));
             var snap = new Snapshot { Agents = new[] { sample, sample with { Key = "y", State = AgentState.Working }, sample with { Key = "z", Provider = Provider.Codex, State = AgentState.Idle } }, At = now, Claude = q };
             Save("sample-overview", r.OverviewKey(snap, now));
+            var errAgent = sample with { Key = "e", State = AgentState.Error, Detail = "The model does not currently have capacity available", Host = "Term" };
+            Save("sample-error", r.AgentKey(errAgent, now));
+            Save("sample-selected-error", r.AgentKey(errAgent, now, 1, 3));
+            var errSnap = new Snapshot { Agents = new[] { errAgent, sample with { Key = "y", State = AgentState.Working } }, At = now, Claude = q };
+            Save("sample-attention-error", r.AttentionKey(errSnap, now, false));
+            Save("sample-overview-error", r.OverviewKey(errSnap, now));
             var reqInput = JsonDocument.Parse("{\"command\":\"git push origin main --force-with-lease && dotnet test tests/AcmeShop.Core.Tests --no-build\",\"description\":\"Push and run the core tests\"}").RootElement.Clone();
             var req = new PendingApproval { Id = "t1", Provider = Provider.Claude, AgentKey = "x", SessionId = "x", Cwd = sample.Cwd, ToolName = "Bash", ToolInput = reqInput, Summary = PendingApproval.Summarize("Bash", reqInput) };
             Save("sample-approve", r.DecisionKey(req, sample, true, 1, now));

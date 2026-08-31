@@ -5,13 +5,15 @@ Shows what your AI coding agents are doing on a stream deck (built for the Ulanz
 
 - **Agent keys** — one running session per key, attention-first: Claude Code and Codex, whether they
   run in Rider, a terminal or the Codex desktop app. Green = working, amber = *needs you* (permission
-  prompt, question, dialog), grey = idle. Shows project, host, elapsed time, model and context-window use.
+  prompt, question, dialog), red = *error* (the turn died on an API error: no model capacity, rate limit,
+  auth), grey = idle. Shows project, host, elapsed time, model and context-window use.
   **Press → the agent's window comes to the front.**
 - **Usage keys** — Claude (5 h / 7 d windows, Max/Pro) and Codex (weekly / 5 h) subscription usage with
   time-to-reset. Press → opens the usage page.
 - **Overview** — counts of working / waiting / idle agents, per provider. Press → jump to the agent that needs you.
 - **Attention → Monitor** — a small key for your *main* layout: lights up amber with the number of
-  agents waiting for you; press → switches the deck to the dedicated monitoring profile (and back).
+  agents waiting for you (red when a turn died on an API error); press → switches the deck to the
+  dedicated monitoring profile (and back).
 - **Select dial + Selected agent** — turn a knob to browse agents, press it to focus the selected one.
 - **Approve / Deny** — when Claude Code (or Codex) asks for permission, the request is held for the deck: the agent
   key turns amber with **APPROVE?** and the tool call (e.g. `Bash: git push origin main`), the selection jumps to it,
@@ -46,9 +48,9 @@ hook per tool (installed by `--install-hooks`, see below).
 | Signal | Source |
 |---|---|
 | Claude session list + state (`busy` / `idle` / `waiting` + `waitingFor`) | `~/.claude/sessions/<pid>.json` (written by Claude Code itself; pid liveness verified via `/proc`) |
-| Claude model, context tokens, session title | tail of `~/.claude/projects/<cwd>/<session>.jsonl` |
+| Claude model, context tokens, session title, API errors | tail of `~/.claude/projects/<cwd>/<session>.jsonl` (the registry stays `idle` after an error; an `isApiErrorMessage` record still at the tail marks the session red until the next prompt) |
 | Claude usage windows | `GET https://api.anthropic.com/api/oauth/usage` with the OAuth token in `~/.claude/.credentials.json` |
-| Codex threads, turn state, model, context, sub-agents | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` (`task_started` / `task_complete` / `token_count` …) |
+| Codex threads, turn state, turn errors, model, context, sub-agents | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` (`task_started` / `task_complete` / `token_count` …; a failed turn — model at capacity, rate limit — is a `task_complete` with `error` details attached) |
 | Codex thread liveness + owning process | the `flock` Codex holds on `~/.codex/thread-writer-locks/<thread>.lock` while a thread is loaded (found through `/proc/<pid>/fd`); no lock → closed/unloaded. Threads whose only turns are `external-import-*` (the desktop app mirroring Claude transcripts) are ignored |
 | Codex usage | `rate_limits` in the rollouts, refreshed from `chatgpt.com/backend-api/wham/usage` with `~/.codex/auth.json` |
 | "Inside Rider" vs terminal vs app | process ancestry of the agent process (`/proc`) |

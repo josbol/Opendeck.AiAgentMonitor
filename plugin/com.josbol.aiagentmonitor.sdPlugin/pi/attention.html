@@ -15,6 +15,8 @@
 <div class="hint">How long a permission request waits for a deck press before the terminal shows its own dialog. Pressing the agent key / dial hands it to the terminal right away.</div>
 <div class="row"><label for="g-holdOnlyWhenUnfocused">Only when window unfocused</label><input type="checkbox" id="g-holdOnlyWhenUnfocused"></div>
 <div class="hint">Skip the hold when the agent's window is already the active window (you are probably looking at it).</div>
+<div class="row"><label for="g-codexGuardianFirst">Codex: auto-review first</label><input type="checkbox" id="g-codexGuardianFirst"></div>
+<div class="hint">In ChatGPT-app sessions with automatic approval review, requests are not held: Codex's Guardian screens them first, and only what it rejects comes back to you — as a question in the app (the deck alerts). Uncheck to hold every request on the deck as usual.</div>
 <div class="row"><label for="g-approvalPopup">On-screen popup</label><select id="g-approvalPopup"><option value="auto">auto (dialog if available)</option><option value="dialog">dialog (Qt window; kdialog / zenity fallback)</option><option value="notification">desktop notification</option><option value="none">none</option></select></div>
 <div class="hint">Shows the full request on screen while it is held (the app's own prompt only appears after the hold). The dialog has Approve / Deny / "Decide in the app" buttons, a hold countdown, and never takes keyboard focus. The Qt window needs python3 with PyQt6, PySide6 or PyQt5.</div>
 <div class="row"><label for="g-popupScreen">Popup on monitor</label><select id="g-popupScreen"><option value="center">the middle one</option><option value="primary">the primary one</option><option value="mouse">the one with the mouse</option></select></div>

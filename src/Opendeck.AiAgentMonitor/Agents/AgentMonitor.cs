@@ -58,6 +58,9 @@ public sealed class AgentMonitor : IDisposable
     /// <summary>Asks the loop to refresh soon (e.g. a hook event arrived).</summary>
     public void Poke() => Interlocked.Exchange(ref _dirty, 1);
 
+    /// <summary>Latest approvals_reviewer for a Codex thread ("auto_review" = Guardian screens permission requests first).</summary>
+    public string? CodexApprovalsReviewer(string threadId) => _codexRollouts.ApprovalsReviewer(threadId);
+
     public void Start()
     {
         Approvals.Added += _ => Poke();
@@ -210,6 +213,9 @@ public sealed record GlobalSettings
     public int HookPort { get; init; } = 43117;
     public int ApprovalHoldSeconds { get; init; } = 30;
     public bool HoldOnlyWhenUnfocused { get; init; } = false;
+    /// <summary>In Codex sessions with automatic approval review (the ChatGPT app's auto mode), don't hold requests:
+    /// Guardian screens them first, and only what it rejects comes back to the user as a question in the app.</summary>
+    public bool CodexGuardianFirst { get; init; } = true;
     public bool NotifyOnApproval { get; init; } = true;
     /// <summary>auto | dialog | notification | none — how a held permission request is shown on screen.</summary>
     public string ApprovalPopup { get; init; } = "auto";
@@ -232,6 +238,7 @@ public sealed record GlobalSettings
             HookPort = (int)(e.Long("hookPort") ?? d.HookPort),
             ApprovalHoldSeconds = (int)(e.Long("approvalHoldSeconds") ?? d.ApprovalHoldSeconds),
             HoldOnlyWhenUnfocused = e.Bool("holdOnlyWhenUnfocused") ?? d.HoldOnlyWhenUnfocused,
+            CodexGuardianFirst = e.Bool("codexGuardianFirst") ?? d.CodexGuardianFirst,
             NotifyOnApproval = e.Bool("notifyOnApproval") ?? d.NotifyOnApproval,
             ApprovalPopup = e.Str("approvalPopup") is { Length: > 0 } ap ? ap : (e.Bool("notifyOnApproval") == false ? "none" : d.ApprovalPopup),
             PopupScreen = e.Str("popupScreen") is { Length: > 0 } ps ? ps : d.PopupScreen,

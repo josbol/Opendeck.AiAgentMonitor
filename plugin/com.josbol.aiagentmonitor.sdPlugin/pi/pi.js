@@ -59,6 +59,7 @@ function render() {
   bind("g-hookPort", "hookPort", { global: true, num: true, def: 43117 });
   bind("g-approvalHoldSeconds", "approvalHoldSeconds", { global: true, num: true, def: 30 });
   bind("g-holdOnlyWhenUnfocused", "holdOnlyWhenUnfocused", { global: true, def: false });
+  bind("g-codexGuardianFirst", "codexGuardianFirst", { global: true, def: true });
   bind("g-approvalPopup", "approvalPopup", { global: true, def: "auto" });
   bind("g-popupScreen", "popupScreen", { global: true, def: "center" });
   const status = document.getElementById("status");

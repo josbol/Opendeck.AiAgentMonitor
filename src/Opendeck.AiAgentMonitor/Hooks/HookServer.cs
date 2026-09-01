@@ -21,8 +21,9 @@ public sealed class HookServer : IDisposable
 
     public int Port { get; private set; }
     public Func<TimeSpan> HoldTime { get; set; } = () => TimeSpan.FromSeconds(30);
-    /// <summary>Optional check: return true to skip the hold (e.g. the agent's window is already focused).</summary>
-    public Func<PendingApproval, Task<bool>>? SkipHold { get; set; }
+    /// <summary>Optional check: return a reason to answer immediately with "no decision" instead of holding
+    /// (e.g. the agent's window is already focused), or null to hold the request as usual.</summary>
+    public Func<PendingApproval, Task<string?>>? SkipHold { get; set; }
     public event Action? Activity;
 
     public HookServer(ApprovalRegistry approvals) { _approvals = approvals; }
@@ -136,9 +137,9 @@ public sealed class HookServer : IDisposable
             Summary = PendingApproval.Summarize(tool, input),
         };
 
-        if (SkipHold is not null && await SkipHold(pending))
+        if (SkipHold is not null && await SkipHold(pending) is { } why)
         {
-            Log.Info($"Approval for {pending.AgentKey} handed to the terminal (window focused)");
+            Log.Info($"Approval for {pending.AgentKey} not held: {why}");
             res.StatusCode = 200; res.Close();
             return;
         }

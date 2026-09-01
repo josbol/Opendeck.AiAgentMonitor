@@ -55,6 +55,7 @@ public sealed class CodexRolloutCollector
         public JsonElement? RateLimits;
         public long ContextWindowFromTask;
         public string? TurnMode;               // collaboration_mode_kind of the running turn ("plan", "default", …)
+        public string? ApprovalsReviewer;      // latest turn_context approvals_reviewer ("auto_review" = Guardian screens requests, "user" = the app/TUI prompts)
         public string Partial = "";
         /// <summary>Saw a task_started that is not an external-agent import (the desktop app mirrors Claude transcripts as threads).</summary>
         public bool HasRealTurn;
@@ -122,8 +123,20 @@ public sealed class CodexRolloutCollector
         var best = _threads.Values.Where(t => t.RateLimits is not null).OrderByDescending(t => t.LastRateLimitsAt).FirstOrDefault();
         if (best?.RateLimits is not null) LatestQuota = ParseRateLimits(best.RateLimits.Value, best.LastRateLimitsAt);
 
+        // reviewer lookup for the hook server (read from another thread: swap a fresh dictionary, never mutate the shared one)
+        var reviewers = new Dictionary<string, string>();
+        foreach (var t in _threads.Values)
+            if (t.Id is not null && t.ApprovalsReviewer is not null) reviewers.TryAdd(t.Id, t.ApprovalsReviewer);
+        _reviewers = reviewers;
+
         return result;
     }
+
+    private volatile Dictionary<string, string> _reviewers = new();
+
+    /// <summary>The thread's latest turn_context approvals_reviewer: "auto_review" (Guardian screens permission
+    /// requests before any user prompt) or "user" (the app/TUI asks). Null when the thread is unknown.</summary>
+    public string? ApprovalsReviewer(string threadId) => _reviewers.TryGetValue(threadId, out var r) ? r : null;
 
     private readonly Dictionary<int, string> _hostByPid = new();
     private string HostFor(int pid, string originator)
@@ -222,6 +235,7 @@ public sealed class CodexRolloutCollector
                 if (payload is null) break;
                 t.Model = payload.Value.Str("model") ?? t.Model;
                 t.Cwd = payload.Value.Str("cwd") ?? t.Cwd;
+                t.ApprovalsReviewer = payload.Value.Str("approvals_reviewer") ?? t.ApprovalsReviewer;
                 break;
 
             case "event_msg":

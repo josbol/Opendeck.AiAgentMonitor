@@ -28,6 +28,12 @@ Shows what your AI coding agents are doing on a stream deck (built for the Ulanz
   were typing cannot approve anything. Without a Qt binding it falls back to kdialog/zenity, and without those to
   a desktop notification with Approve / Deny buttons. The keys show the wrapped text too. No answer within the hold
   time → nothing is approved; the app shows its own prompt as usual.
+  **Codex auto-review sessions are the exception**: when the ChatGPT app runs a thread with automatic approval
+  review (`approvals_reviewer: auto_review` in the rollout), "no decision" does not reach you — Codex's Guardian
+  reviewer decides silently. Holding such requests is pointless (the *Decide in the app* button and the hold
+  timeout would effectively approve), so by default they are not held at all: Guardian screens them first, and
+  only what it rejects comes back to you as a question in the app (which the deck alerts on). Turn the
+  *Codex: auto-review first* setting off to hold every request on the deck regardless.
 
 **Scope**: Linux only. Tested with OpenDeck 2.14 on KDE Plasma 6 / X11 with an Ulanzi D200X (through the
 [opendeck-ulanzi-d200x](https://github.com/edubox/opendeck-ulanzi-d200x) device plugin). Window focusing uses
@@ -59,6 +65,7 @@ hook per tool (installed by `--install-hooks`, see below).
 | Window focus | `wmctrl -lp` (window ↔ pid ↔ ancestry, prefers a detached "Terminal - Project" window, then the project window) → switch to its virtual desktop, `xdotool windowmap` (un-minimize), `wmctrl -ia` + `xdotool windowactivate/windowraise`, verified with `xdotool getactivewindow`; fallback: a one-shot KWin script over D-Bus (`workspace.activeWindow`); a Codex app window hidden to the tray is brought back by relaunching `chatgpt` |
 | Profile switching | `opendeck --process-message '{"event":"switchProfile",…}'` (plugins may not send it over the socket) |
 | Permission requests | Claude `PermissionRequest` hook of type `http` → `POST http://127.0.0.1:43117/hooks/claude`; Codex `PermissionRequest` command hook (`hooks/codex-hook.sh`, curl) → `/hooks/codex`. The plugin holds the request open until a deck press (default 30 s) and answers `{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"|"deny"}}}`; no press, timeout, or plugin not running → the normal dialog |
+| Codex approval routing | hooks run first; a hook that returns no decision falls through to the turn's `approvals_reviewer` (from the rollout's `turn_context`): `user` = the app/TUI prompts, `auto_review` (ChatGPT app auto mode) = the Guardian LLM decides silently — so auto-review requests are answered immediately instead of held |
 
 ## Build & install
 
@@ -134,8 +141,10 @@ exponential backoff and the last good numbers stay on the key marked "stale · a
 `~/.cache/opendeck-aiagentmonitor/`), online usage fetch on/off, Codex idle timeout (default 120 min), Claude context
 window (auto = 1M when `~/.claude/settings.json` uses a `[1m]` model, else 200k), clock refresh; approval hold
 time (how long a permission request waits for the deck before the terminal dialog appears), *only when window
-unfocused* (skip the hold when you are already looking at the agent's window), on-screen popup style (auto / dialog /
-notification / none) and the monitor it opens on (middle / primary / mouse), hook port.
+unfocused* (skip the hold when you are already looking at the agent's window), *Codex: auto-review first* (in
+ChatGPT-app auto-review sessions, don't hold requests — Guardian screens them and only its rejections come back
+to you in the app), on-screen popup style (auto / dialog / notification / none) and the monitor it opens on
+(middle / primary / mouse), hook port.
 
 ## Layout of the code
 

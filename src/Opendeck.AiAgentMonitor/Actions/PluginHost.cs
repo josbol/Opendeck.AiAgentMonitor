@@ -45,9 +45,13 @@ public sealed class PluginHost : IAsyncDisposable
             HoldTime = () => TimeSpan.FromSeconds(Math.Max(5, Settings.ApprovalHoldSeconds)),
             SkipHold = async p =>
             {
-                if (!Settings.HoldOnlyWhenUnfocused) return false;
+                // Codex auto-review sessions (ChatGPT app): let Guardian screen the request first — it approves
+                // the routine ones silently, and what it rejects comes back as a question in the app (deck alerts).
+                if (p.Provider == Provider.Codex && Settings.CodexGuardianFirst && Monitor.CodexApprovalsReviewer(p.SessionId) == "auto_review")
+                    return "auto-review session, Guardian decides; a rejection comes back as a question in the app";
+                if (!Settings.HoldOnlyWhenUnfocused) return null;
                 var agent = Monitor.Current.Agents.FirstOrDefault(a => a.Key == p.AgentKey);
-                return agent is not null && await Focus.WindowFocuser.IsAgentWindowActiveAsync(agent);
+                return agent is not null && await Focus.WindowFocuser.IsAgentWindowActiveAsync(agent) ? "window focused" : null;
             },
         };
         Hooks.Activity += () => Monitor.Poke();

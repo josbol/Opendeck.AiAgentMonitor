@@ -20,6 +20,7 @@ public sealed class KeyRenderer
     static readonly SKColor Ended = SKColor.Parse("#EF4444");
     static readonly SKColor ClaudeAccent = SKColor.Parse("#E0865F");
     static readonly SKColor CodexAccent = SKColor.Parse("#3DD0A4");
+    static readonly SKColor CopilotAccent = SKColor.Parse("#A78BFA");
     static readonly SKColor Good = SKColor.Parse("#22C55E");
     static readonly SKColor Warn = SKColor.Parse("#F59E0B");
     static readonly SKColor Bad = SKColor.Parse("#EF4444");
@@ -59,12 +60,12 @@ public sealed class KeyRenderer
     {
         using var s = NewSurface(); var c = s.Canvas;
         var status = StatusColor(a.State);
-        var accent = a.Provider == Provider.Claude ? ClaudeAccent : CodexAccent;
+        var accent = Accent(a.Provider);
 
         // top band
         Fill(c, new SKRect(0, 0, Size, 24), status);
         var bandText = a.State == AgentState.Waiting ? SKColors.Black : SKColors.White;
-        DrawText(c, a.Provider == Provider.Claude ? "CLAUDE" : "CODEX", 8, 17, 11, bandText, bold: true);
+        DrawText(c, ProviderInfo.Label(a.Provider), 8, 17, 11, bandText, bold: true);
         var right = index is not null && total is not null ? $"{index}/{total}" : a.Host;
         DrawText(c, right, Size - 8, 17, 10, bandText, align: SKTextAlign.Right);
 
@@ -110,6 +111,8 @@ public sealed class KeyRenderer
             FillRound(c, new SKRect(barRect.Left, barRect.Top, barRect.Left + Math.Max(w, 3), barRect.Bottom), 2.5f, Threshold(pct, 70, 90));
             DrawText(c, $"ctx {pct:0}%", Size - 8, 128, 9, Muted, align: SKTextAlign.Right);
         }
+        else if (a.ContextTokens is { } tokens)
+            DrawText(c, $"ctx {Tokens(tokens)}", Size - 8, 128, 9, Muted, align: SKTextAlign.Right);   // size known, window not (Copilot)
 
         if (a.State == AgentState.Waiting) Border(c, Waiting, 5);
         else if (a.State == AgentState.Error) Border(c, Bad, 5);
@@ -119,7 +122,7 @@ public sealed class KeyRenderer
     public string EmptySlot(int slot, Provider? filter)
     {
         using var s = NewSurface(); var c = s.Canvas;
-        DrawText(c, filter switch { Provider.Claude => "CLAUDE", Provider.Codex => "CODEX", _ => "AGENT" }, Size / 2f, 60, 12, Idle, bold: true, align: SKTextAlign.Center);
+        DrawText(c, filter is { } f ? ProviderInfo.Label(f) : "AGENT", Size / 2f, 60, 12, Idle, bold: true, align: SKTextAlign.Center);
         DrawText(c, $"slot {slot}", Size / 2f, 82, 11, Idle, align: SKTextAlign.Center);
         DrawText(c, "—", Size / 2f, 104, 14, Idle, align: SKTextAlign.Center);
         return Encode(s);
@@ -128,12 +131,12 @@ public sealed class KeyRenderer
     public string QuotaKey(Provider p, ProviderQuota? q, DateTimeOffset now)
     {
         using var s = NewSurface(); var c = s.Canvas;
-        var accent = p == Provider.Claude ? ClaudeAccent : CodexAccent;
-        DrawText(c, p == Provider.Claude ? "Claude" : "Codex", 8, 18, 13, accent, bold: true);
+        var accent = Accent(p);
+        DrawText(c, ProviderInfo.Name(p), 8, 18, 13, accent, bold: true);
         if (q?.Plan is { Length: > 0 } plan) DrawText(c, plan.ToUpperInvariant(), Size - 8, 18, 9, Muted, align: SKTextAlign.Right);
 
-        var primary = q?.Short ?? q?.Long;
-        var secondary = primary is not null && q?.Long is { } l && !ReferenceEquals(l, primary) ? l : null;
+        var primary = q?.Primary;
+        var secondary = q?.Secondary;
 
         if (primary is null)
         {
@@ -165,13 +168,16 @@ public sealed class KeyRenderer
         return Encode(s);
     }
 
-    public string OverviewKey(Snapshot snap, DateTimeOffset now)
+    /// <summary>Counts per state and per provider, plus each provider's usage. With <paramref name="backGlyph"/> a ◀ in the
+    /// corner marks the key as the way back to the main layout (the Attention action in "back" mode draws this).</summary>
+    public string OverviewKey(Snapshot snap, DateTimeOffset now, bool backGlyph = false)
     {
         using var s = NewSurface(); var c = s.Canvas;
         var working = snap.Count(AgentState.Working); var waiting = snap.Count(AgentState.Waiting); var idle = snap.Count(AgentState.Idle);
         var errors = snap.Count(AgentState.Error);
         var attention = waiting + errors;
         DrawText(c, "AGENTS", Size / 2f, 18, 11, Muted, bold: true, align: SKTextAlign.Center);
+        if (backGlyph) DrawText(c, "◀", 8, 18, 12, Muted, bold: true);
         if (working + attention + idle == 0)
         {
             DrawText(c, "none", Size / 2f, 84, 20, Idle, bold: true, align: SKTextAlign.Center);
@@ -188,16 +194,18 @@ public sealed class KeyRenderer
         Cell(26, working, "run", Working);
         Cell(72, attention, waiting == 0 && errors > 0 ? "error" : "wait", waiting > 0 ? Waiting : Bad, attention > 0);
         Cell(118, idle, "idle", Idle);
-        DrawText(c, $"Claude {snap.Count(Provider.Claude)}", 8, 110, 11, ClaudeAccent, bold: true);
-        DrawText(c, $"Codex {snap.Count(Provider.Codex)}", Size - 8, 110, 11, CodexAccent, bold: true, align: SKTextAlign.Right);
-        var line = string.Join("  ", new[] { snap.Claude?.Short ?? snap.Claude?.Long, snap.Codex?.Short ?? snap.Codex?.Long }
-            .Select((w, i) => w is null ? null : $"{(i == 0 ? "C" : "X")} {w.UsedPct:0}%").Where(x => x is not null));
-        DrawText(c, line, Size / 2f, 132, 10, Muted, align: SKTextAlign.Center);
+        // per-provider counts (those with a session) and usage (those with a budget), each in the provider's colour
+        var counts = ProviderInfo.All.Where(p => snap.Count(p) > 0).Select(p => ($"{ProviderInfo.Name(p)} {snap.Count(p)}", Accent(p))).ToList();
+        DrawSegments(c, counts, Size / 2f, 110, 11, bold: true, gap: 10);
+        var usage = ProviderInfo.All.Select(p => (p, w: snap.Quota(p)?.Primary)).Where(x => x.w is not null)
+            .Select(x => ($"{ProviderInfo.Initial(x.p)} {x.w!.UsedPct:0}%", Accent(x.p))).ToList();
+        DrawSegments(c, usage, Size / 2f, 132, 10);
         if (attention > 0) Border(c, waiting > 0 ? Waiting : Bad, 4);
         return Encode(s);
     }
 
-    public string AttentionKey(Snapshot snap, DateTimeOffset now, bool back)
+    /// <summary>The small key for the main layout: the number of agents that need you, else what is running.</summary>
+    public string AttentionKey(Snapshot snap, DateTimeOffset now)
     {
         using var s = NewSurface(); var c = s.Canvas;
         var waiting = snap.Count(AgentState.Waiting); var working = snap.Count(AgentState.Working); var idle = snap.Count(AgentState.Idle);
@@ -228,7 +236,7 @@ public sealed class KeyRenderer
             }
             else DrawText(c, "quiet", Size / 2f, 96, 16, Idle, align: SKTextAlign.Center);
         }
-        DrawText(c, back ? "◀ back" : "▶ monitor", Size / 2f, 140, 9, attention > 0 ? fg : Muted, align: SKTextAlign.Center);
+        DrawText(c, "▶ monitor", Size / 2f, 140, 9, attention > 0 ? fg : Muted, align: SKTextAlign.Center);
         return Encode(s);
     }
 
@@ -252,7 +260,7 @@ public sealed class KeyRenderer
         DrawText(c, glyph, Size / 2f, 58, 40, color, bold: true, align: SKTextAlign.Center);
         DrawText(c, allow ? "APPROVE" : "DENY", Size / 2f, 78, 14, Text, bold: true, align: SKTextAlign.Center);
         var who = agent?.ProjectName ?? System.IO.Path.GetFileName(p.Cwd.TrimEnd('/'));
-        DrawFitted(c, $"{(p.Provider == Provider.Claude ? "Claude" : "Codex")} · {who}", Size / 2f, 94, 10, Muted, maxWidth: Size - 16);
+        DrawFitted(c, $"{ProviderInfo.Name(p.Provider)} · {who}", Size / 2f, 94, 10, Muted, maxWidth: Size - 16);
         DrawWrapped(c, Hooks.ApprovalNotifier.FullText(p).Replace(":\n", ": "), 8, 108, 9, Text, Size - 16, 2);
         var foot = KeyRenderer.Elapsed(now - p.ReceivedAt) + (more > 0 ? $"  ·  +{more} more" : "");
         DrawText(c, foot, Size / 2f, 136, 9, Muted, align: SKTextAlign.Center);
@@ -283,6 +291,7 @@ public sealed class KeyRenderer
         return "data:image/png;base64," + Convert.ToBase64String(data.AsSpan());
     }
 
+    private static SKColor Accent(Provider p) => p switch { Provider.Claude => ClaudeAccent, Provider.Codex => CodexAccent, _ => CopilotAccent };
     private static SKColor StatusColor(AgentState st) => st switch { AgentState.Working => Working, AgentState.Waiting => Waiting, AgentState.Error => Bad, AgentState.Idle => Idle, _ => Ended };
     private static SKColor Threshold(double pct, double warn, double bad) => pct >= bad ? Bad : pct >= warn ? Warn : Good;
 
@@ -360,6 +369,22 @@ public sealed class KeyRenderer
         for (var i = 0; i < lines.Count; i++) c.DrawText(lines[i], x, top + i * lineHeight, SKTextAlign.Left, font, paint);
     }
 
+    /// <summary>One centred line of differently coloured pieces; the font shrinks (down to 7 px) until the line fits.</summary>
+    private void DrawSegments(SKCanvas c, IReadOnlyList<(string Text, SKColor Color)> segments, float cx, float y, float size, bool bold = false, float maxWidth = Size - 12, float gap = 8)
+    {
+        if (segments.Count == 0) return;
+        using var font = new SKFont(bold ? _bold : _regular, size) { Subpixel = true, Edging = SKFontEdging.SubpixelAntialias };
+        float Total() => segments.Sum(s => font.MeasureText(s.Text)) + gap * (segments.Count - 1);
+        while (font.Size > 7 && Total() > maxWidth) font.Size -= 0.5f;
+        var x = cx - Total() / 2;
+        foreach (var (text, color) in segments)
+        {
+            using var paint = new SKPaint { Color = color, IsAntialias = true };
+            c.DrawText(text, x, y, SKTextAlign.Left, font, paint);
+            x += font.MeasureText(text) + gap;
+        }
+    }
+
     public static string Elapsed(TimeSpan t)
     {
         if (t < TimeSpan.Zero) t = TimeSpan.Zero;
@@ -368,6 +393,8 @@ public sealed class KeyRenderer
         if (t.TotalHours < 24) return $"{(int)t.TotalHours}h{t.Minutes:00}";
         return $"{(int)t.TotalDays}d{t.Hours}h";
     }
+
+    private static string Tokens(long n) => n >= 1_000_000 ? $"{n / 1_000_000.0:0.0}M" : n >= 1000 ? $"{Math.Round(n / 1000.0)}k" : n.ToString();
 
     private static string ShortModel(string? model)
     {

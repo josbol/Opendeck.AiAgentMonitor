@@ -1,13 +1,13 @@
 <!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="pi.css"><script src="pi.js"></script></head><body>
 <div class="row"><label for="mode">Press switches to</label><select id="mode"><option value="monitor">the monitor profile</option><option value="back">the main profile</option></select></div>
 <div class="row"><label for="profile">Profile override</label><input type="text" id="profile" placeholder="(use plugin-wide setting)"></div>
-<div class="hint">Put this on your main layout: it turns amber with the number of agents waiting for you. Press to jump to the monitoring layout. Place a second one with "main profile" on the monitoring layout as a back button.</div>
+<div class="hint">Put this on your main layout: it turns amber with the number of agents waiting for you. Press to jump to the monitoring layout. Place a second one with "main profile" on the monitoring layout: that one shows the overview (counts per state and provider, usage) with a ◀ in the corner and takes you back.</div>
 <details><summary>Plugin-wide settings</summary>
 <div class="row"><label for="g-monitorProfile">Monitor profile</label><input type="text" id="g-monitorProfile"></div>
 <div class="row"><label for="g-mainProfile">Main profile</label><input type="text" id="g-mainProfile"></div>
 <div class="row"><label for="g-usageRefreshSeconds">Usage refresh (s)</label><input type="number" id="g-usageRefreshSeconds" min="120" step="60"></div>
 <div class="row"><label for="g-networkQuota">Fetch usage online</label><input type="checkbox" id="g-networkQuota"></div>
-<div class="hint">Reads the subscription windows from claude.ai / chatgpt.com with the tokens Claude Code and Codex already store. Off = Codex usage from local logs only, no Claude usage. The Claude endpoint rate-limits eager clients for an hour at a time: keep the refresh at 5 min or slower (it is 3× slower anyway while no agent is working, and backs off by itself after a 429).</div>
+<div class="hint">Reads the subscription windows from claude.ai / chatgpt.com / github.com with the tokens Claude Code, Codex and Copilot already store. Off = Codex usage from local logs only, no Claude usage. The Claude endpoint rate-limits eager clients for an hour at a time: keep the refresh at 5 min or slower (it is 3× slower anyway while no agent is working, and backs off by itself after a 429).</div>
 <div class="row"><label for="g-codexIdleMinutes">Codex idle timeout (min)</label><input type="number" id="g-codexIdleMinutes" min="5" step="5"></div>
 <div class="row"><label for="g-contextWindow">Claude context window</label><select id="g-contextWindow"><option value="0">auto (from settings.json)</option><option value="200000">200k</option><option value="1000000">1M</option></select></div>
 <h3>Approve / deny from the deck</h3>
@@ -21,7 +21,7 @@
 <div class="hint">Shows the full request on screen while it is held (the app's own prompt only appears after the hold). The dialog has Approve / Deny / "Decide in the app" buttons, a hold countdown, and never takes keyboard focus. The Qt window needs python3 with PyQt6, PySide6 or PyQt5.</div>
 <div class="row"><label for="g-popupScreen">Popup on monitor</label><select id="g-popupScreen"><option value="center">the middle one</option><option value="primary">the primary one</option><option value="mouse">the one with the mouse</option></select></div>
 <div class="row"><label for="g-hookPort">Hook port</label><input type="number" id="g-hookPort" min="1024" max="65535"></div>
-<div class="hint">Local port the Claude/Codex hooks post to. After changing it: reload the plugin and run <code>opendeck-aiagentmonitor --install-hooks</code> again.</div>
+<div class="hint">Local port the Claude / Codex / Copilot hooks post to. After changing it: reload the plugin and run <code>opendeck-aiagentmonitor --install-hooks</code> again.</div>
 <div class="row"><label for="g-tickSeconds">Clock refresh (s)</label><input type="number" id="g-tickSeconds" min="10" step="5"></div>
 <div class="row"><button id="refresh" type="button">Refresh now</button></div>
 <h3>Live</h3><pre id="status">…</pre>

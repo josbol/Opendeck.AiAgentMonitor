@@ -83,7 +83,7 @@ public sealed class ApprovalNotifier
 
     private async Task ShowDialogAsync(PendingApproval p, string tool)
     {
-        var who = p.Provider == Provider.Claude ? "Claude Code" : "Codex";
+        var who = ProviderInfo.LongName(p.Provider);
         var project = Path.GetFileName(p.Cwd.TrimEnd('/'));
         var title = $"{who} asks permission — {project}";
         var previousActive = (await WindowFocuser.RunAsync("xdotool", "getactivewindow")).Trim();
@@ -207,7 +207,7 @@ public sealed class ApprovalNotifier
 
     private async Task ShowNotificationAsync(PendingApproval p)
     {
-        var who = p.Provider == Provider.Claude ? "Claude Code" : "Codex";
+        var who = ProviderInfo.LongName(p.Provider);
         var project = Path.GetFileName(p.Cwd.TrimEnd('/'));
         var title = $"{who} asks permission — {project}";
         var body = Html(FullText(p)) + $"\n<i>deck / buttons decide; no answer in {HoldSeconds()} s → the app's own prompt</i>";

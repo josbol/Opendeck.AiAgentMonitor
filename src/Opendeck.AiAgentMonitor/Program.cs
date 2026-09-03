@@ -9,7 +9,8 @@ using Opendeck.AiAgentMonitor.Util;
 // ---- developer/diagnostic modes (no OpenDeck needed) -------------------------------------------
 if (args.Length > 0 && args[0].StartsWith("--"))
 {
-    var monitor = new AgentMonitor();
+    // --offline: skip the usage endpoints (local files only) in the diagnostic modes
+    var monitor = new AgentMonitor { NetworkQuota = !args.Contains("--offline"), CodexNetworkQuota = !args.Contains("--offline") };
     switch (args[0])
     {
         case "--dump":
@@ -20,7 +21,7 @@ if (args.Length > 0 && args[0].StartsWith("--"))
             {
                 at = s.At,
                 agents = s.Agents.Select(a => new { a.Key, a.Provider, a.Name, a.ProjectName, a.Cwd, a.Host, a.State, a.Detail, a.Model, a.ContextTokens, a.ContextPct, a.Pid, a.SubAgents, a.Title, StateSince = a.StateSince.ToLocalTime(), LastActivity = a.LastActivity.ToLocalTime() }),
-                claude = s.Claude, codex = s.Codex,
+                claude = s.Claude, codex = s.Codex, copilot = s.Copilot,
             }, new JsonSerializerOptions { WriteIndented = true, Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() } }));
             return 0;
         }
@@ -33,9 +34,10 @@ if (args.Length > 0 && args[0].StartsWith("--"))
             void Save(string name, string dataUrl) => File.WriteAllBytes(Path.Combine(dir, name + ".png"), Convert.FromBase64String(dataUrl[(dataUrl.IndexOf(',') + 1)..]));
             Save("quota-claude", r.QuotaKey(Provider.Claude, s.Claude, now));
             Save("quota-codex", r.QuotaKey(Provider.Codex, s.Codex, now));
+            Save("quota-copilot", r.QuotaKey(Provider.Copilot, s.Copilot, now));
             Save("overview", r.OverviewKey(s, now));
-            Save("attention", r.AttentionKey(s, now, false));
-            Save("attention-back", r.AttentionKey(s, now, true));
+            Save("attention", r.AttentionKey(s, now));
+            Save("attention-back", r.OverviewKey(s, now, backGlyph: true));
             var ordered = s.Ordered();
             for (var i = 0; i < ordered.Count; i++) { Save($"agent-{i + 1}", r.AgentKey(ordered[i], now)); Save($"selected-{i + 1}", r.AgentKey(ordered[i], now, i + 1, ordered.Count)); }
             Save("empty-slot", r.EmptySlot(3, null));
@@ -44,16 +46,18 @@ if (args.Length > 0 && args[0].StartsWith("--"))
             Save("sample-waiting", r.AgentKey(sample, now));
             Save("sample-working", r.AgentKey(sample with { Provider = Provider.Codex, State = AgentState.Working, Detail = null, Model = "gpt-5.6-sol", Host = "App", ContextPct = 82 }, now));
             Save("sample-idle", r.AgentKey(sample with { State = AgentState.Idle, Detail = null, Host = "Term", ContextPct = 95 }, now));
+            Save("sample-copilot", r.AgentKey(sample with { Provider = Provider.Copilot, State = AgentState.Waiting, Detail = "shell: git push origin main", Model = "gpt-5.4-mini", Host = "Rider", ContextPct = null }, now));
+            Save("sample-quota-copilot", r.QuotaKey(Provider.Copilot, new ProviderQuota { Provider = Provider.Copilot, FetchedAt = now, Plan = "pro", Windows = new[] { new QuotaWindow("month", 41, now.AddDays(12.5)) } }, now));
             var q = new ProviderQuota { Provider = Provider.Claude, FetchedAt = now, Plan = "max", Windows = new[] { new QuotaWindow("5h", 36, now.AddHours(2.3)), new QuotaWindow("7d", 67, now.AddDays(1)) } };
             Save("sample-quota", r.QuotaKey(Provider.Claude, q, now));
             Save("sample-quota-codex", r.QuotaKey(Provider.Codex, new ProviderQuota { Provider = Provider.Codex, FetchedAt = now, Plan = "pro", Windows = new[] { new QuotaWindow("5h", 12, now.AddHours(3.1)), new QuotaWindow("7d", 58, now.AddDays(4)) } }, now));
-            var snap = new Snapshot { Agents = new[] { sample, sample with { Key = "y", State = AgentState.Working }, sample with { Key = "z", Provider = Provider.Codex, State = AgentState.Idle } }, At = now, Claude = q };
+            var snap = new Snapshot { Agents = new[] { sample, sample with { Key = "y", State = AgentState.Working }, sample with { Key = "z", Provider = Provider.Codex, State = AgentState.Idle }, sample with { Key = "w", Provider = Provider.Copilot, State = AgentState.Working } }, At = now, Claude = q, Copilot = new ProviderQuota { Provider = Provider.Copilot, FetchedAt = now, Windows = new[] { new QuotaWindow("month", 41, now.AddDays(12)) } } };
             Save("sample-overview", r.OverviewKey(snap, now));
             var errAgent = sample with { Key = "e", State = AgentState.Error, Detail = "The model does not currently have capacity available", Host = "Term" };
             Save("sample-error", r.AgentKey(errAgent, now));
             Save("sample-selected-error", r.AgentKey(errAgent, now, 1, 3));
             var errSnap = new Snapshot { Agents = new[] { errAgent, sample with { Key = "y", State = AgentState.Working } }, At = now, Claude = q };
-            Save("sample-attention-error", r.AttentionKey(errSnap, now, false));
+            Save("sample-attention-error", r.AttentionKey(errSnap, now));
             Save("sample-overview-error", r.OverviewKey(errSnap, now));
             var reqInput = JsonDocument.Parse("{\"command\":\"git push origin main --force-with-lease && dotnet test tests/AcmeShop.Core.Tests --no-build\",\"description\":\"Push and run the core tests\"}").RootElement.Clone();
             var req = new PendingApproval { Id = "t1", Provider = Provider.Claude, AgentKey = "x", SessionId = "x", Cwd = sample.Cwd, ToolName = "Bash", ToolInput = reqInput, Summary = PendingApproval.Summarize("Bash", reqInput) };
@@ -62,7 +66,8 @@ if (args.Length > 0 && args[0].StartsWith("--"))
             Save("sample-approve-empty", r.DecisionKey(null, null, true, 0, now));
             Save("sample-agent-approval", r.AgentKey(sample with { Approval = req, Detail = req.Summary }, now));
             Save("sample-selected-approval", r.AgentKey(sample with { Approval = req, Detail = req.Summary }, now, 1, 3));
-            Save("sample-attention", r.AttentionKey(snap, now, false));
+            Save("sample-attention", r.AttentionKey(snap, now));
+            Save("sample-overview-back", r.OverviewKey(snap, now, backGlyph: true));
             Console.WriteLine($"wrote {Directory.GetFiles(dir).Length} images to {dir}");
             return 0;
         }
@@ -110,7 +115,7 @@ if (args.Length > 0 && args[0].StartsWith("--"))
             Console.WriteLine(typeof(Program).Assembly.GetName().Version);
             return 0;
         default:
-            Console.WriteLine("usage: opendeck-aiagentmonitor [--dump | --render <dir> | --focus [key] [--dry] | --install-hooks [port] [holdSeconds] | --uninstall-hooks] | -port N -pluginUUID id -registerEvent ev -info json");
+            Console.WriteLine("usage: opendeck-aiagentmonitor [--dump [--offline] | --render <dir> [--offline] | --focus [key] [--dry] | --install-hooks [port] [holdSeconds] | --uninstall-hooks] | -port N -pluginUUID id -registerEvent ev -info json");
             return 1;
     }
 }

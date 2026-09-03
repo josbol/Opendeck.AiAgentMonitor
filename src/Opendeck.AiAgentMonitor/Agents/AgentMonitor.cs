@@ -10,11 +10,13 @@ public sealed class AgentMonitor : IDisposable
     private readonly ClaudeUsageClient _claudeUsage = new();
     private readonly CodexRolloutCollector _codexRollouts = new();
     private readonly CodexUsageClient _codexUsage = new();
+    private readonly CopilotSessionCollector _copilotSessions = new();
+    private readonly CopilotUsageClient _copilotUsage = new();
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly CancellationTokenSource _cts = new();
     private readonly Dictionary<string, AgentState> _lastStates = new();
-    private FileSystemWatcher? _claudeWatcher, _codexWatcher;
-    private DateTimeOffset _lastClaudeUsage = DateTimeOffset.MinValue, _lastCodexUsage = DateTimeOffset.MinValue;
+    private FileSystemWatcher? _claudeWatcher, _codexWatcher, _copilotWatcher;
+    private DateTimeOffset _lastClaudeUsage = DateTimeOffset.MinValue, _lastCodexUsage = DateTimeOffset.MinValue, _lastCopilotUsage = DateTimeOffset.MinValue;
     private int _dirty;
 
     public ApprovalRegistry Approvals { get; } = new();
@@ -51,7 +53,7 @@ public sealed class AgentMonitor : IDisposable
         var now = DateTimeOffset.UtcNow;
         if (now - _lastManualRefresh < TimeSpan.FromMinutes(1)) return;
         _lastManualRefresh = now;
-        _lastClaudeUsage = _lastCodexUsage = DateTimeOffset.MinValue;
+        _lastClaudeUsage = _lastCodexUsage = _lastCopilotUsage = DateTimeOffset.MinValue;
         Interlocked.Exchange(ref _dirty, 1);
     }
 
@@ -67,6 +69,7 @@ public sealed class AgentMonitor : IDisposable
         Approvals.Resolved += (_, _) => Poke();
         TryWatch(_claudeSessions.SessionsDir, ref _claudeWatcher, false);
         TryWatch(_codexRollouts.SessionsDir, ref _codexWatcher, true);
+        TryWatch(_copilotSessions.SessionsDir, ref _copilotWatcher, true);
         _ = Task.Run(LoopAsync);
     }
 
@@ -110,6 +113,7 @@ public sealed class AgentMonitor : IDisposable
             var agents = new List<AgentInfo>();
             agents.AddRange(_claudeSessions.Collect(now));
             agents.AddRange(_codexRollouts.Collect(now));
+            agents.AddRange(_copilotSessions.Collect(now));
 
             // permission requests held open by the hook server override the collectors' view
             var pending = Approvals.Pending;
@@ -152,8 +156,15 @@ public sealed class AgentMonitor : IDisposable
                 _codexApi = api;
             }
             else if (_codexApi is { Error: null } && (codex is null || _codexApi.FetchedAt > codex.FetchedAt)) codex = _codexApi;
+            var anyCopilotActive = agents.Any(a => a.Provider == Provider.Copilot && a.State is AgentState.Working or AgentState.Waiting);
+            ProviderQuota? copilot = _copilotUsage.Last;
+            if (NetworkQuota && now - _lastCopilotUsage > (anyCopilotActive ? UsageInterval : UsageInterval * 3) && now >= _copilotUsage.NotBefore)
+            {
+                _lastCopilotUsage = now;
+                copilot = await _copilotUsage.FetchAsync(UsageInterval, ct);
+            }
 
-            var snapshot = new Snapshot { Agents = agents, Claude = claude, Codex = codex, At = now };
+            var snapshot = new Snapshot { Agents = agents, Claude = claude, Codex = codex, Copilot = copilot, At = now };
             var changed = !Equivalent(Current, snapshot);
             Current = snapshot;
             foreach (var a in agents)
@@ -173,7 +184,7 @@ public sealed class AgentMonitor : IDisposable
     private static bool Equivalent(Snapshot a, Snapshot b)
     {
         if (a.Agents.Count != b.Agents.Count) return false;
-        if (!QuotaEq(a.Claude, b.Claude) || !QuotaEq(a.Codex, b.Codex)) return false;
+        if (!QuotaEq(a.Claude, b.Claude) || !QuotaEq(a.Codex, b.Codex) || !QuotaEq(a.Copilot, b.Copilot)) return false;
         for (var i = 0; i < a.Agents.Count; i++)
         {
             var x = a.Agents[i]; var y = b.Agents[i];
@@ -196,7 +207,7 @@ public sealed class AgentMonitor : IDisposable
     public void Dispose()
     {
         _cts.Cancel();
-        _claudeWatcher?.Dispose(); _codexWatcher?.Dispose();
+        _claudeWatcher?.Dispose(); _codexWatcher?.Dispose(); _copilotWatcher?.Dispose();
     }
 }
 

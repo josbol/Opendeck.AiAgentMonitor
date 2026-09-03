@@ -1,6 +1,6 @@
 {
 	"Name": "AI Agent Monitor",
-	"Description": "Live status of Claude Code and Codex sessions (working / needs you / idle), subscription usage, approve or deny permission requests from the deck, and one-press jump to the agent's window.",
+	"Description": "Live status of Claude Code, Codex and GitHub Copilot sessions (working / needs you / idle), subscription usage, approve or deny permission requests from the deck, and one-press jump to the agent's window.",
 	"Author": "Jos Bol",
 	"Version": "0.2.5",
 	"Icon": "icons/plugin",
@@ -45,7 +45,7 @@
 		{
 			"UUID": "com.josbol.aiagentmonitor.quota",
 			"Name": "Usage",
-			"Tooltip": "Subscription usage windows (5h / 7d) for Claude or Codex. Press to open the usage page.",
+			"Tooltip": "Subscription usage windows (5h / 7d) for Claude or Codex, the monthly budget for Copilot. Press to open the usage page.",
 			"Icon": "icons/quota",
 			"Controllers": [
 				"Keypad"
@@ -78,7 +78,7 @@
 		{
 			"UUID": "com.josbol.aiagentmonitor.attention",
 			"Name": "Attention → Monitor",
-			"Tooltip": "For your main layout: lights up when an agent needs you; press to switch to the monitor profile (or back).",
+			"Tooltip": "For your main layout: lights up when an agent needs you; press to switch to the monitor profile. In 'back' mode it shows the overview and switches back.",
 			"Icon": "icons/attention",
 			"Controllers": [
 				"Keypad"

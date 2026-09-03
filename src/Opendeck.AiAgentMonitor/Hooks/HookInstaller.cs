@@ -7,8 +7,8 @@ using System.Text.Json.Nodes;
 namespace Opendeck.AiAgentMonitor.Hooks;
 
 /// <summary>
-/// Adds/removes the PermissionRequest hooks that forward permission prompts to the deck:
-/// an http hook in Claude Code's user settings and a command hook in Codex's user hooks.json.
+/// Adds/removes the PermissionRequest hooks that forward permission prompts to the deck: an http hook in Claude
+/// Code's user settings, a command hook in Codex's user hooks.json, and a command hook file in Copilot's ~/.copilot/hooks/.
 /// Idempotent (our entries are recognised by URL / script path), other hooks are preserved, backups are written.
 /// </summary>
 public static class HookInstaller
@@ -19,15 +19,21 @@ public static class HookInstaller
     public static string CodexHome => Environment.GetEnvironmentVariable("CODEX_HOME") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex");
     public static string CodexHooksPath => Path.Combine(CodexHome, "hooks.json");
     public static string CodexConfigPath => Path.Combine(CodexHome, "config.toml");
+    public static string CopilotHome => Environment.GetEnvironmentVariable("COPILOT_HOME") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".copilot");
+    /// <summary>Our own file in Copilot's user-level hooks directory (the CLI loads every *.json there).</summary>
+    public static string CopilotHooksPath => Path.Combine(CopilotHome, "hooks", $"{Tag}.json");
 
     /// <summary>Absolute path of hooks/codex-hook.sh next to the plugin binary (symlinks resolved).</summary>
-    public static string CodexHookScript()
+    public static string CodexHookScript() => HookScript("codex-hook.sh");
+    public static string CopilotHookScript() => HookScript("copilot-hook.sh");
+
+    private static string HookScript(string name)
     {
         var candidates = new[]
         {
-            Path.Combine(AppContext.BaseDirectory, "..", "..", "hooks", "codex-hook.sh"),   // bin/<rid>/ → plugin root
-            Path.Combine(AppContext.BaseDirectory, "..", "hooks", "codex-hook.sh"),
-            Path.Combine(AppContext.BaseDirectory, "hooks", "codex-hook.sh"),
+            Path.Combine(AppContext.BaseDirectory, "..", "..", "hooks", name),   // bin/<rid>/ → plugin root
+            Path.Combine(AppContext.BaseDirectory, "..", "hooks", name),
+            Path.Combine(AppContext.BaseDirectory, "hooks", name),
         };
         foreach (var c in candidates) if (File.Exists(c)) return Path.GetFullPath(c);
         return Path.GetFullPath(candidates[0]);
@@ -37,12 +43,14 @@ public static class HookInstaller
     {
         InstallClaude(port, holdSeconds);
         InstallCodex(port, holdSeconds);
+        InstallCopilot(port, holdSeconds);
     }
 
     public static void Uninstall()
     {
         UninstallClaude();
         UninstallCodex();
+        UninstallCopilot();
     }
 
     // ---- Claude: settings.json → hooks.PermissionRequest[].hooks[] { type: http, url: .../hooks/claude } ----
@@ -190,6 +198,37 @@ public static class HookInstaller
             File.WriteAllText(CodexConfigPath, string.Join("\n", lines).TrimEnd('\n') + "\n");
         }
         Console.WriteLine($"Codex: hook removed from {CodexHooksPath} (and its trust entry from {CodexConfigPath})");
+    }
+
+    // ---- Copilot: ~/.copilot/hooks/aiagentmonitor.json → { version: 1, hooks: { permissionRequest: [ { type: command, bash: copilot-hook.sh } ] } } ----
+    // The CLI merges every *.json in that directory, so ours is a file of its own: nothing of the user's is touched.
+    // permissionRequest fires before rule checks and auto-allow (reads are answered "no decision" by the server).
+
+    public static void InstallCopilot(int port, int holdSeconds)
+    {
+        var script = CopilotHookScript();
+        var root = new JsonObject
+        {
+            ["version"] = 1,
+            ["hooks"] = new JsonObject
+            {
+                ["permissionRequest"] = new JsonArray(new JsonObject
+                {
+                    ["type"] = "command",
+                    ["bash"] = $"AIAGENTMONITOR_PORT={port} AIAGENTMONITOR_HOLD={holdSeconds + 5} '{script}'",
+                    ["timeoutSec"] = holdSeconds + 10,
+                }),
+            },
+        };
+        Save(CopilotHooksPath, root);
+        Console.WriteLine($"Copilot: permissionRequest command hook → {script} (port {port}, timeout {holdSeconds + 10}s) in {CopilotHooksPath}");
+    }
+
+    public static void UninstallCopilot()
+    {
+        if (!File.Exists(CopilotHooksPath)) return;
+        File.Delete(CopilotHooksPath);
+        Console.WriteLine($"Copilot: {CopilotHooksPath} removed");
     }
 
     // ---- helpers ------------------------------------------------------------------------

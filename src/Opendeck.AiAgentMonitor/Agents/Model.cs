@@ -1,6 +1,24 @@
 namespace Opendeck.AiAgentMonitor.Agents;
 
-public enum Provider { Claude, Codex }
+public enum Provider { Claude, Codex, Copilot }
+
+/// <summary>Names of the supported agents (one place for every label the keys, dialogs and settings use).</summary>
+public static class ProviderInfo
+{
+    public static readonly Provider[] All = { Provider.Claude, Provider.Codex, Provider.Copilot };
+
+    /// <summary>"Claude" / "Codex" / "Copilot".</summary>
+    public static string Name(Provider p) => p switch { Provider.Claude => "Claude", Provider.Codex => "Codex", _ => "Copilot" };
+    /// <summary>"Claude Code" / "Codex" / "GitHub Copilot" — for dialogs and notifications.</summary>
+    public static string LongName(Provider p) => p switch { Provider.Claude => "Claude Code", Provider.Codex => "Codex", _ => "GitHub Copilot" };
+    /// <summary>Upper-case band label on the keys.</summary>
+    public static string Label(Provider p) => Name(p).ToUpperInvariant();
+    /// <summary>One or two letters for the overview's usage line.</summary>
+    public static string Initial(Provider p) => p switch { Provider.Claude => "C", Provider.Codex => "X", _ => "GH" };
+    /// <summary>Prefix of the agent key ("claude:&lt;session&gt;").</summary>
+    public static string KeyPrefix(Provider p) => Name(p).ToLowerInvariant();
+    public static Provider? Parse(string? s) => s?.Trim().ToLowerInvariant() switch { "claude" => Provider.Claude, "codex" => Provider.Codex, "copilot" or "github" or "github-copilot" => Provider.Copilot, _ => null };
+}
 
 public enum AgentState
 {
@@ -61,6 +79,10 @@ public sealed record ProviderQuota
 
     public QuotaWindow? Short => Windows.FirstOrDefault(w => w.Label == "5h");
     public QuotaWindow? Long => Windows.FirstOrDefault(w => w.Label == "7d" && w.Scope is null) ?? Windows.FirstOrDefault(w => w.Label == "7d");
+    /// <summary>The window the ring shows: the short one, else the long one, else whatever the plan reports (Copilot: one monthly budget).</summary>
+    public QuotaWindow? Primary => Short ?? Long ?? Windows.FirstOrDefault();
+    /// <summary>A second window for the footer, when there is one distinct from <see cref="Primary"/>.</summary>
+    public QuotaWindow? Secondary => Primary is { } p && Long is { } l && !ReferenceEquals(l, p) ? l : null;
 }
 
 public sealed record Snapshot
@@ -68,9 +90,12 @@ public sealed record Snapshot
     public required IReadOnlyList<AgentInfo> Agents { get; init; }
     public ProviderQuota? Claude { get; init; }
     public ProviderQuota? Codex { get; init; }
+    public ProviderQuota? Copilot { get; init; }
     public required DateTimeOffset At { get; init; }
 
     public static readonly Snapshot Empty = new() { Agents = Array.Empty<AgentInfo>(), At = DateTimeOffset.MinValue };
+
+    public ProviderQuota? Quota(Provider p) => p switch { Provider.Claude => Claude, Provider.Codex => Codex, _ => Copilot };
 
     public IEnumerable<AgentInfo> Live => Agents.Where(a => a.State != AgentState.Ended);
     public int Count(AgentState s) => Agents.Count(a => a.State == s);

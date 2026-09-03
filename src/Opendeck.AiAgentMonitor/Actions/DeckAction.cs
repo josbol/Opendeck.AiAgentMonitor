@@ -29,7 +29,7 @@ public abstract class DeckAction
 
     protected string SettingString(string name, string fallback) => Settings.Str(name) is { Length: > 0 } s ? s : fallback;
     protected int SettingInt(string name, int fallback) => (int)(Settings.Long(name) ?? fallback);
-    protected Provider? SettingProvider(string name) => SettingString(name, "auto").ToLowerInvariant() switch { "claude" => Provider.Claude, "codex" => Provider.Codex, _ => null };
+    protected Provider? SettingProvider(string name) => ProviderInfo.Parse(SettingString(name, "auto"));
 }
 
 /// <summary>Shows one agent: the N-th in attention-first order (auto) or filtered by provider.</summary>
@@ -58,16 +58,23 @@ public sealed class QuotaAction : DeckAction
     public override string? Render(Snapshot s, DateTimeOffset now)
     {
         var p = SettingProvider("provider") ?? Provider.Claude;
-        return Host.Renderer.QuotaKey(p, p == Provider.Claude ? s.Claude : s.Codex, now);
+        return Host.Renderer.QuotaKey(p, s.Quota(p), now);
     }
 
     public override Task OnKeyUpAsync(DeckEvent e)
     {
         var p = SettingProvider("provider") ?? Provider.Claude;
-        Host.Deck.OpenUrl(p == Provider.Claude ? "https://claude.ai/settings/usage" : "https://chatgpt.com/codex/settings/usage");
+        Host.Deck.OpenUrl(UsagePage(p));
         Host.RequestUsageRefresh();
         return Task.CompletedTask;
     }
+
+    internal static string UsagePage(Provider p) => p switch
+    {
+        Provider.Claude => "https://claude.ai/settings/usage",
+        Provider.Codex => "https://chatgpt.com/codex/settings/usage",
+        _ => "https://github.com/settings/copilot/features",
+    };
 }
 
 /// <summary>Counts of working / waiting / idle agents.</summary>
@@ -85,11 +92,12 @@ public sealed class OverviewAction : DeckAction
     }
 }
 
-/// <summary>Small key for the main layout: shows how many agents need you; press switches to the monitor profile
-/// (or back to the main profile when mode = "back").</summary>
+/// <summary>Small key for the main layout: shows how many agents need you; press switches to the monitor profile.
+/// In "back" mode (on the monitoring layout) it shows the Overview with a ◀ in the corner and switches back to the
+/// main profile, so that layout needs no separate Overview key.</summary>
 public sealed class AttentionAction : DeckAction
 {
-    public override string? Render(Snapshot s, DateTimeOffset now) => Host.Renderer.AttentionKey(s, now, IsBack);
+    public override string? Render(Snapshot s, DateTimeOffset now) => IsBack ? Host.Renderer.OverviewKey(s, now, backGlyph: true) : Host.Renderer.AttentionKey(s, now);
     private bool IsBack => SettingString("mode", "monitor") == "back";
 
     public override async Task OnKeyUpAsync(DeckEvent e)

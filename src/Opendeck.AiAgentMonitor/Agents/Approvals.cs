@@ -36,14 +36,14 @@ public sealed class PendingApproval
         string? s = null;
         if (input.ValueKind == JsonValueKind.Object)
         {
-            s = input.Str("command") ?? input.Str("description") ?? input.Str("file_path") ?? input.Str("path") ?? input.Str("url") ?? input.Str("pattern") ?? input.Str("query");
+            s = input.Str("command") ?? input.Str("fullCommandText") ?? input.Str("description") ?? input.Str("file_path") ?? input.Str("path") ?? input.Str("url") ?? input.Str("pattern") ?? input.Str("query") ?? input.Str("intention");
             if (s is null && input.TryGetProperty("command", out var cmd) && cmd.ValueKind == JsonValueKind.Array)
                 s = string.Join(' ', cmd.EnumerateArray().Select(e => e.ToString()));
             if (s is null)
                 foreach (var p in input.EnumerateObject())
                     if (p.Value.ValueKind == JsonValueKind.String && p.Value.GetString() is { Length: > 0 } v) { s = v; break; }
         }
-        if (s is not null && (tool is "Edit" or "Write" or "MultiEdit" or "Read" or "NotebookEdit") && s.Contains('/')) s = Path.GetFileName(s);
+        if (s is not null && (tool is "Edit" or "Write" or "MultiEdit" or "Read" or "NotebookEdit" or "write" or "read" or "edit") && s.Contains('/')) s = Path.GetFileName(s);
         if (s is not null && s.TrimStart().StartsWith("*** Begin Patch", StringComparison.Ordinal))
         {
             var files = PatchFiles(s);

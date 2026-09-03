@@ -250,6 +250,7 @@ public sealed class PluginHost : IAsyncDisposable
         agents = s.Agents.Select(a => new { a.Key, provider = a.Provider.ToString(), a.Name, a.Cwd, a.Host, state = a.State.ToString(), a.Detail, a.Model, a.ContextPct, a.SubAgents, approval = a.Approval?.Summary }),
         claude = s.Claude is null ? null : new { s.Claude.Plan, s.Claude.Error, s.Claude.Source, windows = s.Claude.Windows },
         codex = s.Codex is null ? null : new { s.Codex.Plan, s.Codex.Error, s.Codex.Source, windows = s.Codex.Windows },
+        copilot = s.Copilot is null ? null : new { s.Copilot.Plan, s.Copilot.Error, s.Copilot.Source, windows = s.Copilot.Windows },
     };
 
     public ValueTask DisposeAsync() { _cts.Cancel(); Hooks.Dispose(); return ValueTask.CompletedTask; }

@@ -73,9 +73,9 @@ def build_profile(manifest, main_profile, name):
     sliders = [None] * 3
     keys[0] = instance(manifest, "quota", "Keypad", 0, {"provider": "claude"})
     keys[1] = instance(manifest, "quota", "Keypad", 1, {"provider": "codex"})
-    keys[2] = instance(manifest, "overview", "Keypad", 2)
+    keys[2] = instance(manifest, "quota", "Keypad", 2, {"provider": "copilot"})
     keys[3] = instance(manifest, "selected", "Keypad", 3)
-    keys[4] = instance(manifest, "attention", "Keypad", 4, {"mode": "back"})
+    keys[4] = instance(manifest, "attention", "Keypad", 4, {"mode": "back"})   # shows the overview; press = back to the main profile
     for slot, pos in enumerate(range(5, 11), start=1):        # 5..10 → agent slots 1..6
         keys[pos] = instance(manifest, "agent", "Keypad", pos, {"slot": slot, "provider": "auto"})
     keys[11] = instance(manifest, "approve", "Keypad", 11)

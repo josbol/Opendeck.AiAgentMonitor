@@ -233,31 +233,41 @@ public static class WindowFocuser
     }
 
     /// <summary>
-    /// How well a window title matches the agent's project. JetBrains IDEs title the main window "Project" or
-    /// "Project – file" and detached tool windows "Terminal - Project"; the session lives in the terminal, so that
-    /// wins for Claude. Names come from <see cref="ProjectNames"/> (directory, .idea, .sln, git root).
+    /// How well a window title matches the agent's project. Names come from <see cref="ProjectNames"/> ordered by
+    /// proximity to the cwd (basename first, then .idea/.sln/git-root walking upwards); when two windows each match
+    /// a name structurally, the one matching the closer name wins — an ancestor directory may share its name with a
+    /// different project (e.g. cwd …/API/SiteVH.Api next to another agent in a project called API). A weak
+    /// "title mentions the name" match never outranks a structural one.
     /// </summary>
     internal static int ScoreTitle(string title, IReadOnlyList<string> names, Provider provider)
     {
-        const StringComparison cmp = StringComparison.OrdinalIgnoreCase;
         var best = 0;
-        var sep = title.IndexOf(" - ", StringComparison.Ordinal);
-        var tool = sep > 0 ? title[..sep] : null;
-        var toolProject = sep > 0 ? title[(sep + 3)..] : null;
-        foreach (var name in names)
+        for (var i = 0; i < names.Count; i++)
         {
-            if (name.Length == 0) continue;
-            int s;
-            if (toolProject is not null && toolProject.Equals(name, cmp))
-                s = provider == Provider.Claude && tool!.Equals("Terminal", cmp) ? 40 : 30;      // detached tool window of this project
-            else if (title.Equals(name, cmp) || title.StartsWith(name + " ", cmp) || title.StartsWith(name + "–", cmp))
-                s = 20;                                                                          // main IDE window
-            else if (title.Contains(name, cmp))
-                s = 10;
-            else s = 0;
+            var tier = TitleTier(title, names[i], provider);
+            var s = tier >= 20 ? (1000 - Math.Min(i, 999)) * 100 + tier : tier;
             best = Math.Max(best, s);
         }
         return best;
+    }
+
+    /// <summary>
+    /// How a window title relates to one project name. JetBrains IDEs title the main window "Project" or
+    /// "Project – file" (20) and detached tool windows "Terminal - Project" (40 for Claude, whose session lives in
+    /// the terminal; 30 otherwise); a title that merely contains the name scores 10.
+    /// </summary>
+    internal static int TitleTier(string title, string name, Provider provider)
+    {
+        const StringComparison cmp = StringComparison.OrdinalIgnoreCase;
+        if (name.Length == 0) return 0;
+        var sep = title.IndexOf(" - ", StringComparison.Ordinal);
+        var tool = sep > 0 ? title[..sep] : null;
+        var toolProject = sep > 0 ? title[(sep + 3)..] : null;
+        if (toolProject is not null && toolProject.Equals(name, cmp))
+            return provider == Provider.Claude && tool!.Equals("Terminal", cmp) ? 40 : 30;
+        if (title.Equals(name, cmp) || title.StartsWith(name + " ", cmp) || title.StartsWith(name + "–", cmp))
+            return 20;
+        return title.Contains(name, cmp) ? 10 : 0;
     }
 
     private static readonly Dictionary<string, (DateTime At, List<string> Names)> NameCache = new();

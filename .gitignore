@@ -8,3 +8,4 @@ plugin/*/bin/
 render-out/
 *.user
 dist/
+__pycache__/

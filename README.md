@@ -113,13 +113,14 @@ them back to disk when it exits, so to replace a profile it already knows: **sto
 ```
  row 0 │ Claude usage │ Codex usage │ Copilot usage │ Selected agent │ ◀ Overview (press = back)
  row 1 │ agent 1      │ agent 2     │ agent 3   │ agent 4        │ agent 5
- row 2 │ agent 6      │ ✓ Approve   │ ✕ Deny    │ Overview (wide screen) │ D200X wide-screen setting
+ row 2 │ agent 6      │ ✓ Approve   │ ✕ Deny    │ Overview (wide screen)
  dials │ 0: select agent (press = focus / hand to terminal) │ 1: PipeWire volume │ 2: Spotify volume  (1–2 copied from Default)
  side  │ 1: ✓ Approve │ 2: ✕ Deny
+ infobar │ D200X "Wide screen" setting (copied from Default): the slot between the side buttons, no display, no press
 ```
 
 The wide screen only shows the Overview when the D200X plugin's *Wide screen* mode is **Action icon**
-(that setting is global to the D200X plugin, not per profile).
+(since D200X plugin 1.3.0 that can be set per layout, in the copied action's *This layout* setting).
 
 ## Diagnostics
 

@@ -81,7 +81,10 @@ def build_profile(manifest, main_profile, name):
     keys[11] = instance(manifest, "approve", "Keypad", 11)
     keys[12] = instance(manifest, "deny", "Keypad", 12)
     keys[13] = instance(manifest, "overview", "Keypad", 13)     # the wide screen (shown when the D200X "Wide screen" mode is "Action icon")
-    keys[14] = retarget((main_profile or {}).get("keys", [None] * 17)[14] if main_profile else None, "Keypad", 14)  # D200X wide-screen settings action, if present
+    # the D200X "Wide screen" settings action, if the main layout has one: on the D200X plugin's infobar slot (no display, no press) since its 1.3.0, on the dead key 14 before
+    main_slots = ((main_profile or {}).get("infobars", []) + (main_profile or {}).get("keys", [None] * 17)) if main_profile else []
+    wide = next((k for k in main_slots if k and k.get("action", {}).get("uuid") == "com.ulanzi.d200x.widescreen"), None)
+    infobars = [retarget(wide, "Infobar", 0)]
     keys[15] = instance(manifest, "approve", "Keypad", 15)      # side button 1: approve (no display)
     keys[16] = instance(manifest, "deny", "Keypad", 16)         # side button 2: deny (no display)
     sliders[0] = instance(manifest, "dial", "Encoder", 0)
@@ -90,7 +93,7 @@ def build_profile(manifest, main_profile, name):
         # keep the user's volume dials reachable on the monitoring layout
         sliders[1] = retarget(ms[1] if len(ms) > 1 else None, "Encoder", 1)
         sliders[2] = retarget(ms[0] if len(ms) > 0 else None, "Encoder", 2)
-    return {"id": name, "keys": keys, "sliders": sliders, "infobars": []}
+    return {"id": name, "keys": keys, "sliders": sliders, "infobars": infobars}
 
 def main():
     ap = argparse.ArgumentParser()

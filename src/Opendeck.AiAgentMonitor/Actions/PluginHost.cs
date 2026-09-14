@@ -102,10 +102,36 @@ public sealed class PluginHost : IAsyncDisposable
 
     public void RequestUsageRefresh() => Monitor.RequestUsageRefresh();
 
-    // ---- profile switching via the OpenDeck CLI (plugins may not send switchProfile themselves) ----
+    // ---- profile switching ----------------------------------------------------------------
+    // Stock OpenDeck ignores switchProfile from any plugin but its own starter pack; the josbol/OpenDeck fork accepts it
+    // from this one. The first switch tries the plugin socket and watches for the willDisappear that a real switch sends
+    // to the pressed key; if none comes it falls back to spawning the OpenDeck CLI (~0.2 s) and remembers the answer.
 
-    public async Task<bool> SwitchProfileAsync(string device, string profile)
+    private bool? _directSwitchWorks;
+    private readonly Dictionary<string, TaskCompletionSource> _disappearance = new();
+    private static readonly TimeSpan DirectSwitchTimeout = TimeSpan.FromMilliseconds(400);
+
+    public async Task<bool> SwitchProfileAsync(string device, string profile, string? pressedContext = null)
     {
+        if (_directSwitchWorks != false && pressedContext is not null)
+        {
+            var gone = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            lock (_lock) _disappearance[pressedContext] = gone;
+            try
+            {
+                Deck.Send(new { @event = "switchProfile", device, profile });
+                if (await Task.WhenAny(gone.Task, Task.Delay(DirectSwitchTimeout)) == gone.Task)
+                {
+                    if (_directSwitchWorks is null) Log.Info("switchProfile accepted over the plugin socket; using it from now on");
+                    _directSwitchWorks = true;
+                    return true;
+                }
+                if (_directSwitchWorks is null) Log.Info("switchProfile over the plugin socket went unanswered; using the OpenDeck CLI from now on");
+                _directSwitchWorks = false;
+            }
+            finally { lock (_lock) _disappearance.Remove(pressedContext); }
+        }
+
         var message = Json.Serialize(new { @event = "switchProfile", device, profile });
         foreach (var (file, prefix) in new[] { ("opendeck", Array.Empty<string>()), ("/usr/bin/opendeck", Array.Empty<string>()), ("flatpak", new[] { "run", "me.amankhanna.opendeck" }) })
         {
@@ -146,7 +172,12 @@ public sealed class PluginHost : IAsyncDisposable
                 break;
             }
             case "willDisappear":
-                if (e.Context is not null) lock (_lock) _actions.Remove(e.Context);
+                if (e.Context is not null)
+                    lock (_lock)
+                    {
+                        _actions.Remove(e.Context);
+                        if (_disappearance.Remove(e.Context, out var gone)) gone.TrySetResult();
+                    }
                 Log.Debug($"willDisappear {e.Context}");
                 break;
             case "didReceiveSettings":

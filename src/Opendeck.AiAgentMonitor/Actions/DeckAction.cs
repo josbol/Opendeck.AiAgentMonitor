@@ -102,13 +102,20 @@ public sealed class AttentionAction : DeckAction
     public override string? Render(Snapshot s, DateTimeOffset now) => IsBack ? Host.Renderer.OverviewKey(s, now, backGlyph: true) : Host.Renderer.AttentionKey(s, now);
     private bool IsBack => SettingString("mode", "monitor") == "back";
 
-    public override async Task OnKeyUpAsync(DeckEvent e)
+    // Acts on keyDown, not keyUp: the switch starts while the key is still held, and OpenDeck drops the keyUp that
+    // follows a profile switch (it remembers which profile the key went down in), so nothing else sees it.
+    // The switch runs off the event loop: it waits for this key's willDisappear, which arrives on that loop.
+    public override Task OnKeyDownAsync(DeckEvent e)
     {
         var profile = SettingString("profile", IsBack ? Host.Settings.MainProfile : Host.Settings.MonitorProfile);
         var device = Device ?? e.Device;
-        if (device is null) { Host.Deck.ShowAlert(Context); return; }
-        var ok = await Host.SwitchProfileAsync(device, profile);
-        if (!ok) Host.Deck.ShowAlert(Context);
+        if (device is null) { Host.Deck.ShowAlert(Context); return Task.CompletedTask; }
+        _ = Task.Run(async () =>
+        {
+            try { if (!await Host.SwitchProfileAsync(device, profile, Context)) Host.Deck.ShowAlert(Context); }
+            catch (Exception ex) { Log.Error("switchProfile failed", ex); Host.Deck.ShowAlert(Context); }
+        });
+        return Task.CompletedTask;
     }
 }
 

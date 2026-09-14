@@ -26,6 +26,75 @@ public static class HookInstaller
     /// <summary>Absolute path of hooks/codex-hook.sh next to the plugin binary (symlinks resolved).</summary>
     public static string CodexHookScript() => HookScript("codex-hook.sh");
     public static string CopilotHookScript() => HookScript("copilot-hook.sh");
+    public static string AntigravityStatusScript() => HookScript("antigravity-status.py");
+
+    /// <summary>Observe agy's status-line feed. Preserve and chain any existing status-line command.</summary>
+    public static void InstallAntigravity(string? antigravityHome = null, string? scriptPath = null)
+    {
+        var home = antigravityHome ?? Collectors.AntigravitySessionCollector.DefaultHome;
+        var script = scriptPath ?? AntigravityStatusScript();
+        if (!File.Exists(script)) throw new FileNotFoundException("Build the plugin before enabling Antigravity monitoring.", script);
+        var path = Path.Combine(home, "settings.json");
+        var root = LoadObject(path);
+        var backup = Path.Combine(home, "aiagentmonitor", "previous-statusline.json");
+        if (!IsOurStatusLine(root["statusLine"]))
+            Save(backup, new JsonObject { ["present"] = root.ContainsKey("statusLine"), ["statusLine"] = root["statusLine"]?.DeepClone() });
+        else if (!File.Exists(backup)) throw new IOException("Cannot find the original Antigravity status-line configuration.");
+        var stateDir = Path.Combine(home, "aiagentmonitor", "sessions");
+        var status = root["statusLine"] as JsonObject;
+        root["statusLine"] = new JsonObject
+        {
+            ["type"] = "command",
+            ["command"] = $"python3 {ShellQuote(script)} {ShellQuote(stateDir)} {ShellQuote(backup)}",
+            ["enabled"] = true,
+            ["stack_with_default"] = status?["stack_with_default"]?.DeepClone() ?? JsonValue.Create(status?["command"] is null),
+            ["padding"] = status?["padding"]?.DeepClone() ?? JsonValue.Create(0),
+        };
+        Directory.CreateDirectory(stateDir);
+        Save(path, root);
+        RemoveLegacyGeminiHooks(Path.Combine(Path.GetDirectoryName(home)!, "settings.json"));
+        Console.WriteLine($"Antigravity CLI: status monitoring enabled in {path}. Start or restart agy; python3 is required.");
+    }
+
+    public static void UninstallAntigravity(string? antigravityHome = null)
+    {
+        var home = antigravityHome ?? Collectors.AntigravitySessionCollector.DefaultHome;
+        var path = Path.Combine(home, "settings.json");
+        if (!File.Exists(path)) return;
+        var root = LoadObject(path);
+        if (!IsOurStatusLine(root["statusLine"])) return; // user has since chosen a different status line
+        var backupPath = Path.Combine(home, "aiagentmonitor", "previous-statusline.json");
+        if (!File.Exists(backupPath)) throw new IOException("Cannot restore the missing original status-line configuration.");
+        var backup = LoadObject(backupPath);
+        if (backup["present"]?.GetValue<bool>() == true) root["statusLine"] = backup["statusLine"]?.DeepClone();
+        else root.Remove("statusLine");
+        Save(path, root);
+        Console.WriteLine($"Antigravity CLI: original status line restored in {path}. Restart agy.");
+    }
+
+    private static bool IsOurStatusLine(JsonNode? status)
+        => status is JsonObject obj && (obj["command"]?.GetValue<string>() ?? "").Contains("antigravity-status.py", StringComparison.Ordinal);
+
+    internal static void RemoveLegacyGeminiHooks(string path)
+    {
+        if (!File.Exists(path)) return;
+        var root = LoadObject(path);
+        if (root["hooks"] is not JsonObject hooks) return;
+        var changed = false;
+        foreach (var eventName in new[] { "SessionStart", "SessionEnd", "BeforeAgent", "AfterAgent", "BeforeModel", "BeforeTool", "AfterTool", "Notification" })
+        {
+            var groups = RemoveOurs(hooks, eventName, h => h["name"]?.GetValue<string>() == "aiagentmonitor-gemini");
+            if (hooks[eventName] is null || JsonNode.DeepEquals(hooks[eventName], groups)) continue;
+            changed = true;
+            if (groups.Count == 0) hooks.Remove(eventName); else hooks[eventName] = groups;
+        }
+        if (!changed) return;
+        if (hooks.Count == 0) root.Remove("hooks");
+        Save(path, root);
+        Console.WriteLine("Removed the previous AI Agent Monitor Gemini hooks.");
+    }
+
+    private static string ShellQuote(string value) => "'" + value.Replace("'", "'\"'\"'") + "'";
 
     private static string HookScript(string name)
     {

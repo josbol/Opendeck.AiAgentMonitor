@@ -12,10 +12,11 @@ public sealed class AgentMonitor : IDisposable
     private readonly CodexUsageClient _codexUsage = new();
     private readonly CopilotSessionCollector _copilotSessions = new();
     private readonly CopilotUsageClient _copilotUsage = new();
+    private readonly AntigravitySessionCollector _antigravitySessions = new();
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly CancellationTokenSource _cts = new();
     private readonly Dictionary<string, AgentState> _lastStates = new();
-    private FileSystemWatcher? _claudeWatcher, _codexWatcher, _copilotWatcher;
+    private FileSystemWatcher? _claudeWatcher, _codexWatcher, _copilotWatcher, _antigravityWatcher;
     private DateTimeOffset _lastClaudeUsage = DateTimeOffset.MinValue, _lastCodexUsage = DateTimeOffset.MinValue, _lastCopilotUsage = DateTimeOffset.MinValue;
     private int _dirty;
 
@@ -70,6 +71,7 @@ public sealed class AgentMonitor : IDisposable
         TryWatch(_claudeSessions.SessionsDir, ref _claudeWatcher, false);
         TryWatch(_codexRollouts.SessionsDir, ref _codexWatcher, true);
         TryWatch(_copilotSessions.SessionsDir, ref _copilotWatcher, true);
+        TryWatch(_antigravitySessions.SessionsDir, ref _antigravityWatcher, false);
         _ = Task.Run(LoopAsync);
     }
 
@@ -114,6 +116,7 @@ public sealed class AgentMonitor : IDisposable
             agents.AddRange(_claudeSessions.Collect(now));
             agents.AddRange(_codexRollouts.Collect(now));
             agents.AddRange(_copilotSessions.Collect(now));
+            agents.AddRange(_antigravitySessions.Collect(now));
 
             // permission requests held open by the hook server override the collectors' view
             var pending = Approvals.Pending;
@@ -164,7 +167,7 @@ public sealed class AgentMonitor : IDisposable
                 copilot = await _copilotUsage.FetchAsync(UsageInterval, ct);
             }
 
-            var snapshot = new Snapshot { Agents = agents, Claude = claude, Codex = codex, Copilot = copilot, At = now };
+            var snapshot = new Snapshot { Agents = agents, Claude = claude, Codex = codex, Copilot = copilot, Antigravity = _antigravitySessions.LatestQuota, At = now };
             var changed = !Equivalent(Current, snapshot);
             Current = snapshot;
             foreach (var a in agents)
@@ -184,12 +187,12 @@ public sealed class AgentMonitor : IDisposable
     private static bool Equivalent(Snapshot a, Snapshot b)
     {
         if (a.Agents.Count != b.Agents.Count) return false;
-        if (!QuotaEq(a.Claude, b.Claude) || !QuotaEq(a.Codex, b.Codex) || !QuotaEq(a.Copilot, b.Copilot)) return false;
+        if (!QuotaEq(a.Claude, b.Claude) || !QuotaEq(a.Codex, b.Codex) || !QuotaEq(a.Copilot, b.Copilot) || !QuotaEq(a.Antigravity, b.Antigravity)) return false;
         for (var i = 0; i < a.Agents.Count; i++)
         {
             var x = a.Agents[i]; var y = b.Agents[i];
             if (x.Key != y.Key || x.State != y.State || x.Detail != y.Detail || x.Name != y.Name || x.SubAgents != y.SubAgents || x.Approval?.Id != y.Approval?.Id
-                || x.Model != y.Model || Math.Round(x.ContextPct ?? -1) != Math.Round(y.ContextPct ?? -1)
+                || x.Model != y.Model || x.ContextTokens != y.ContextTokens || Math.Round(x.ContextPct ?? -1) != Math.Round(y.ContextPct ?? -1)
                 || (x.LastActivity - y.LastActivity).Duration() > TimeSpan.FromSeconds(30)) return false;
         }
         return true;
@@ -198,16 +201,17 @@ public sealed class AgentMonitor : IDisposable
     private static bool QuotaEq(ProviderQuota? a, ProviderQuota? b)
     {
         if (a is null || b is null) return a is null && b is null;
-        if (a.Error != b.Error || a.Windows.Count != b.Windows.Count) return false;
+        if (a.Error != b.Error || a.Plan != b.Plan || a.Windows.Count != b.Windows.Count) return false;
         for (var i = 0; i < a.Windows.Count; i++)
-            if (a.Windows[i].Label != b.Windows[i].Label || Math.Round(a.Windows[i].UsedPct) != Math.Round(b.Windows[i].UsedPct)) return false;
+            if (a.Windows[i].Label != b.Windows[i].Label || a.Windows[i].Scope != b.Windows[i].Scope
+                || a.Windows[i].ResetsAt != b.Windows[i].ResetsAt || Math.Round(a.Windows[i].UsedPct) != Math.Round(b.Windows[i].UsedPct)) return false;
         return true;
     }
 
     public void Dispose()
     {
         _cts.Cancel();
-        _claudeWatcher?.Dispose(); _codexWatcher?.Dispose(); _copilotWatcher?.Dispose();
+        _claudeWatcher?.Dispose(); _codexWatcher?.Dispose(); _copilotWatcher?.Dispose(); _antigravityWatcher?.Dispose();
     }
 }
 

@@ -1,23 +1,23 @@
 namespace Opendeck.AiAgentMonitor.Agents;
 
-public enum Provider { Claude, Codex, Copilot }
+public enum Provider { Claude, Codex, Copilot, Antigravity }
 
 /// <summary>Names of the supported agents (one place for every label the keys, dialogs and settings use).</summary>
 public static class ProviderInfo
 {
-    public static readonly Provider[] All = { Provider.Claude, Provider.Codex, Provider.Copilot };
+    public static readonly Provider[] All = { Provider.Claude, Provider.Codex, Provider.Copilot, Provider.Antigravity };
 
-    /// <summary>"Claude" / "Codex" / "Copilot".</summary>
-    public static string Name(Provider p) => p switch { Provider.Claude => "Claude", Provider.Codex => "Codex", _ => "Copilot" };
-    /// <summary>"Claude Code" / "Codex" / "GitHub Copilot" — for dialogs and notifications.</summary>
-    public static string LongName(Provider p) => p switch { Provider.Claude => "Claude Code", Provider.Codex => "Codex", _ => "GitHub Copilot" };
+    /// <summary>Short provider name, including "Antigravity" for Google Antigravity CLI.</summary>
+    public static string Name(Provider p) => p switch { Provider.Claude => "Claude", Provider.Codex => "Codex", Provider.Copilot => "Copilot", Provider.Antigravity => "Antigravity", _ => throw new ArgumentOutOfRangeException(nameof(p)) };
+    /// <summary>Full provider name for dialogs and notifications.</summary>
+    public static string LongName(Provider p) => p switch { Provider.Claude => "Claude Code", Provider.Codex => "Codex", Provider.Copilot => "GitHub Copilot", Provider.Antigravity => "Google Antigravity CLI", _ => throw new ArgumentOutOfRangeException(nameof(p)) };
     /// <summary>Upper-case band label on the keys.</summary>
     public static string Label(Provider p) => Name(p).ToUpperInvariant();
     /// <summary>One or two letters for the overview's usage line.</summary>
-    public static string Initial(Provider p) => p switch { Provider.Claude => "C", Provider.Codex => "X", _ => "GH" };
+    public static string Initial(Provider p) => p switch { Provider.Claude => "C", Provider.Codex => "X", Provider.Copilot => "GH", Provider.Antigravity => "AG", _ => throw new ArgumentOutOfRangeException(nameof(p)) };
     /// <summary>Prefix of the agent key ("claude:&lt;session&gt;").</summary>
     public static string KeyPrefix(Provider p) => Name(p).ToLowerInvariant();
-    public static Provider? Parse(string? s) => s?.Trim().ToLowerInvariant() switch { "claude" => Provider.Claude, "codex" => Provider.Codex, "copilot" or "github" or "github-copilot" => Provider.Copilot, _ => null };
+    public static Provider? Parse(string? s) => s?.Trim().ToLowerInvariant() switch { "claude" => Provider.Claude, "codex" => Provider.Codex, "copilot" or "github" or "github-copilot" => Provider.Copilot, "antigravity" or "agy" or "gemini" => Provider.Antigravity, _ => null };
 }
 
 public enum AgentState
@@ -91,11 +91,12 @@ public sealed record Snapshot
     public ProviderQuota? Claude { get; init; }
     public ProviderQuota? Codex { get; init; }
     public ProviderQuota? Copilot { get; init; }
+    public ProviderQuota? Antigravity { get; init; }
     public required DateTimeOffset At { get; init; }
 
     public static readonly Snapshot Empty = new() { Agents = Array.Empty<AgentInfo>(), At = DateTimeOffset.MinValue };
 
-    public ProviderQuota? Quota(Provider p) => p switch { Provider.Claude => Claude, Provider.Codex => Codex, _ => Copilot };
+    public ProviderQuota? Quota(Provider p) => p switch { Provider.Claude => Claude, Provider.Codex => Codex, Provider.Copilot => Copilot, Provider.Antigravity => Antigravity, _ => null };
 
     public IEnumerable<AgentInfo> Live => Agents.Where(a => a.State != AgentState.Ended);
     public int Count(AgentState s) => Agents.Count(a => a.State == s);

@@ -73,7 +73,9 @@ public sealed class QuotaAction : DeckAction
     {
         Provider.Claude => "https://claude.ai/settings/usage",
         Provider.Codex => "https://chatgpt.com/codex/settings/usage",
-        _ => "https://github.com/settings/copilot/features",
+        Provider.Copilot => "https://github.com/settings/copilot/features",
+        Provider.Antigravity => "https://antigravity.google/docs/cli/commands/usage/",
+        _ => throw new ArgumentOutOfRangeException(nameof(p)),
     };
 }
 

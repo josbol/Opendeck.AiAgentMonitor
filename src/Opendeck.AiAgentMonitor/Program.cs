@@ -21,7 +21,7 @@ if (args.Length > 0 && args[0].StartsWith("--"))
             {
                 at = s.At,
                 agents = s.Agents.Select(a => new { a.Key, a.Provider, a.Name, a.ProjectName, a.Cwd, a.Host, a.State, a.Detail, a.Model, a.ContextTokens, a.ContextPct, a.Pid, a.SubAgents, a.Title, StateSince = a.StateSince.ToLocalTime(), LastActivity = a.LastActivity.ToLocalTime() }),
-                claude = s.Claude, codex = s.Codex, copilot = s.Copilot,
+                claude = s.Claude, codex = s.Codex, copilot = s.Copilot, antigravity = s.Antigravity,
             }, new JsonSerializerOptions { WriteIndented = true, Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() } }));
             return 0;
         }
@@ -35,6 +35,7 @@ if (args.Length > 0 && args[0].StartsWith("--"))
             Save("quota-claude", r.QuotaKey(Provider.Claude, s.Claude, now));
             Save("quota-codex", r.QuotaKey(Provider.Codex, s.Codex, now));
             Save("quota-copilot", r.QuotaKey(Provider.Copilot, s.Copilot, now));
+            Save("quota-antigravity", r.QuotaKey(Provider.Antigravity, s.Antigravity, now));
             Save("overview", r.OverviewKey(s, now));
             Save("attention", r.AttentionKey(s, now));
             Save("attention-back", r.OverviewKey(s, now, backGlyph: true));
@@ -47,12 +48,16 @@ if (args.Length > 0 && args[0].StartsWith("--"))
             Save("sample-working", r.AgentKey(sample with { Provider = Provider.Codex, State = AgentState.Working, Detail = null, Model = "gpt-5.6-sol", Host = "App", ContextPct = 82 }, now));
             Save("sample-idle", r.AgentKey(sample with { State = AgentState.Idle, Detail = null, Host = "Term", ContextPct = 95 }, now));
             Save("sample-copilot", r.AgentKey(sample with { Provider = Provider.Copilot, State = AgentState.Waiting, Detail = "shell: git push origin main", Model = "gpt-5.4-mini", Host = "Rider", ContextPct = null }, now));
+            Save("sample-antigravity", r.AgentKey(sample with { Provider = Provider.Antigravity, State = AgentState.Working, Detail = null, Model = "Gemini 3.5 Flash (High)", Host = "Konsole", ContextPct = 24.5, SubAgents = 0 }, now));
+            Save("sample-antigravity-waiting", r.AgentKey(sample with { Provider = Provider.Antigravity, State = AgentState.Waiting, Detail = "confirmation", Model = "Gemini 3.5 Flash (High)", ContextPct = 24.5, SubAgents = 0 }, now));
+            Save("sample-quota-antigravity", r.QuotaKey(Provider.Antigravity, new ProviderQuota { Provider = Provider.Antigravity, FetchedAt = now, Plan = "Pro", Windows = new[] { new QuotaWindow("quota", 42, now.AddDays(2), "gemini-weekly") } }, now));
             Save("sample-quota-copilot", r.QuotaKey(Provider.Copilot, new ProviderQuota { Provider = Provider.Copilot, FetchedAt = now, Plan = "pro", Windows = new[] { new QuotaWindow("month", 41, now.AddDays(12.5)) } }, now));
             var q = new ProviderQuota { Provider = Provider.Claude, FetchedAt = now, Plan = "max", Windows = new[] { new QuotaWindow("5h", 36, now.AddHours(2.3)), new QuotaWindow("7d", 67, now.AddDays(1)) } };
             Save("sample-quota", r.QuotaKey(Provider.Claude, q, now));
             Save("sample-quota-codex", r.QuotaKey(Provider.Codex, new ProviderQuota { Provider = Provider.Codex, FetchedAt = now, Plan = "pro", Windows = new[] { new QuotaWindow("5h", 12, now.AddHours(3.1)), new QuotaWindow("7d", 58, now.AddDays(4)) } }, now));
             var snap = new Snapshot { Agents = new[] { sample, sample with { Key = "y", State = AgentState.Working }, sample with { Key = "z", Provider = Provider.Codex, State = AgentState.Idle }, sample with { Key = "w", Provider = Provider.Copilot, State = AgentState.Working } }, At = now, Claude = q, Copilot = new ProviderQuota { Provider = Provider.Copilot, FetchedAt = now, Windows = new[] { new QuotaWindow("month", 41, now.AddDays(12)) } } };
             Save("sample-overview", r.OverviewKey(snap, now));
+            Save("sample-overview-four", r.OverviewKey(snap with { Agents = snap.Agents.Append(sample with { Key = "g", Provider = Provider.Antigravity, State = AgentState.Working }).ToArray() }, now));
             var errAgent = sample with { Key = "e", State = AgentState.Error, Detail = "The model does not currently have capacity available", Host = "Term" };
             Save("sample-error", r.AgentKey(errAgent, now));
             Save("sample-selected-error", r.AgentKey(errAgent, now, 1, 3));
@@ -75,13 +80,19 @@ if (args.Length > 0 && args[0].StartsWith("--"))
         {
             await monitor.RefreshAsync(CancellationToken.None);
             var dry = args.Contains("--dry");
-            var sel = args.Skip(1).FirstOrDefault(a => a != "--dry");
+            var sel = args.Skip(1).FirstOrDefault(a => a is not ("--dry" or "--offline"));
             var targets = sel is null ? monitor.Current.Ordered() : monitor.Current.Agents.Where(a => a.Key.Contains(sel)).ToList();
             if (targets.Count == 0) { Console.WriteLine("no such agent"); return 1; }
             foreach (var t in dry ? targets : targets.Take(1))
                 Console.WriteLine($"{t.Key}: " + (await Opendeck.AiAgentMonitor.Focus.WindowFocuser.FocusAsync(t, dry) ? (dry ? "window found" : "focused") : "not found"));
             return 0;
         }
+        case "--install-antigravity-monitor":
+            Opendeck.AiAgentMonitor.Hooks.HookInstaller.InstallAntigravity();
+            return 0;
+        case "--uninstall-antigravity-monitor":
+            Opendeck.AiAgentMonitor.Hooks.HookInstaller.UninstallAntigravity();
+            return 0;
         case "--install-hooks":
         case "--uninstall-hooks":
         {
@@ -115,7 +126,7 @@ if (args.Length > 0 && args[0].StartsWith("--"))
             Console.WriteLine(typeof(Program).Assembly.GetName().Version);
             return 0;
         default:
-            Console.WriteLine("usage: opendeck-aiagentmonitor [--dump [--offline] | --render <dir> [--offline] | --focus [key] [--dry] | --install-hooks [port] [holdSeconds] | --uninstall-hooks] | -port N -pluginUUID id -registerEvent ev -info json");
+            Console.WriteLine("usage: opendeck-aiagentmonitor [--dump [--offline] | --render <dir> [--offline] | --focus [key] [--dry] | --install-hooks [port] [holdSeconds] | --uninstall-hooks | --install-antigravity-monitor | --uninstall-antigravity-monitor] | -port N -pluginUUID id -registerEvent ev -info json");
             return 1;
     }
 }

@@ -29,6 +29,7 @@
 
   <ItemGroup>
     <Content Include="..\..\plugin\com.josbol.aiagentmonitor.sdPlugin\assets\fonts\*.ttf" Link="fonts\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="..\..\plugin\com.josbol.aiagentmonitor.sdPlugin\hooks\antigravity-status.py" Link="hooks\antigravity-status.py" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

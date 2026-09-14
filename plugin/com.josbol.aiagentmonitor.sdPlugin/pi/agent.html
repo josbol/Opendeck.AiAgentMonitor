@@ -1,8 +1,9 @@
 <!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="pi.css"><script src="pi.js"></script></head><body>
 <div class="row"><label for="slot">Slot</label><input type="number" id="slot" min="1" max="20"></div>
 <div class="hint">Agents are ordered attention-first: those waiting for you, then working, then idle. Slot 1 is the most urgent.</div>
-<div class="row"><label for="provider">Show</label><select id="provider"><option value="auto">All agents</option><option value="claude">Claude only</option><option value="codex">Codex only</option><option value="copilot">Copilot only</option></select></div>
+<div class="row"><label for="provider">Show</label><select id="provider"><option value="auto">All agents</option><option value="claude">Claude only</option><option value="codex">Codex only</option><option value="copilot">Copilot only</option><option value="antigravity">Antigravity only</option></select></div>
 <div class="hint">Press the key to bring the agent's window (Rider, terminal, Codex app) to the front. Copilot sessions come from the Copilot CLI and from the JetBrains plugin's chat (same engine).</div>
+<div class="hint">Antigravity CLI (agy): enable monitoring with <code>opendeck-aiagentmonitor --install-antigravity-monitor</code>, then restart agy. Requires python3. Reads live state and usage; permission prompts are answered in agy.</div>
 <details><summary>Plugin-wide settings</summary>
 <div class="row"><label for="g-monitorProfile">Monitor profile</label><input type="text" id="g-monitorProfile"></div>
 <div class="row"><label for="g-mainProfile">Main profile</label><input type="text" id="g-mainProfile"></div>

@@ -21,6 +21,7 @@ public sealed class KeyRenderer
     static readonly SKColor ClaudeAccent = SKColor.Parse("#E0865F");
     static readonly SKColor CodexAccent = SKColor.Parse("#3DD0A4");
     static readonly SKColor CopilotAccent = SKColor.Parse("#A78BFA");
+    static readonly SKColor AntigravityAccent = SKColor.Parse("#8AB4F8");
     static readonly SKColor Good = SKColor.Parse("#22C55E");
     static readonly SKColor Warn = SKColor.Parse("#F59E0B");
     static readonly SKColor Bad = SKColor.Parse("#EF4444");
@@ -65,7 +66,7 @@ public sealed class KeyRenderer
         // top band
         Fill(c, new SKRect(0, 0, Size, 24), status);
         var bandText = a.State == AgentState.Waiting ? SKColors.Black : SKColors.White;
-        DrawText(c, ProviderInfo.Label(a.Provider), 8, 17, 11, bandText, bold: true);
+        DrawText(c, ProviderInfo.Label(a.Provider), 8, 17, a.Provider == Provider.Antigravity ? 9 : 11, bandText, bold: true);
         var right = index is not null && total is not null ? $"{index}/{total}" : a.Host;
         DrawText(c, right, Size - 8, 17, 10, bandText, align: SKTextAlign.Right);
 
@@ -132,11 +133,18 @@ public sealed class KeyRenderer
     {
         using var s = NewSurface(); var c = s.Canvas;
         var accent = Accent(p);
-        DrawText(c, ProviderInfo.Name(p), 8, 18, 13, accent, bold: true);
-        if (q?.Plan is { Length: > 0 } plan) DrawText(c, plan.ToUpperInvariant(), Size - 8, 18, 9, Muted, align: SKTextAlign.Right);
+        DrawText(c, ProviderInfo.Name(p), 8, 18, p == Provider.Antigravity ? 11 : 13, accent, bold: true);
+        if (q?.Plan is { Length: > 0 } plan)
+        {
+            if (p == Provider.Antigravity)
+                DrawFitted(c, plan.Replace("Google AI ", "", StringComparison.OrdinalIgnoreCase).ToUpperInvariant(), Size - 32, 18, 9, Muted, maxWidth: 48);
+            else DrawText(c, plan.ToUpperInvariant(), Size - 8, 18, 9, Muted, align: SKTextAlign.Right);
+        }
 
         var primary = q?.Primary;
         var secondary = q?.Secondary;
+        if (p == Provider.Antigravity && primary?.Scope is { } scope && q?.Error is null && now - q!.FetchedAt <= TimeSpan.FromMinutes(20))
+            DrawFitted(c, scope, Size / 2f, 31, 8, Muted, maxWidth: Size - 16);
 
         if (primary is null)
         {
@@ -196,10 +204,16 @@ public sealed class KeyRenderer
         Cell(118, idle, "idle", Idle);
         // per-provider counts (those with a session) and usage (those with a budget), each in the provider's colour
         var counts = ProviderInfo.All.Where(p => snap.Count(p) > 0).Select(p => ($"{ProviderInfo.Name(p)} {snap.Count(p)}", Accent(p))).ToList();
-        DrawSegments(c, counts, Size / 2f, 110, 11, bold: true, gap: 10);
+        // Four provider names do not fit even at the minimum font size. Give them two balanced rows.
+        if (counts.Count > 2)
+        {
+            DrawSegments(c, counts.Take(2).ToList(), Size / 2f, 102, 10, bold: true, gap: 10);
+            DrawSegments(c, counts.Skip(2).ToList(), Size / 2f, 116, 10, bold: true, gap: 10);
+        }
+        else DrawSegments(c, counts, Size / 2f, 110, 11, bold: true, gap: 10);
         var usage = ProviderInfo.All.Select(p => (p, w: snap.Quota(p)?.Primary)).Where(x => x.w is not null)
             .Select(x => ($"{ProviderInfo.Initial(x.p)} {x.w!.UsedPct:0}%", Accent(x.p))).ToList();
-        DrawSegments(c, usage, Size / 2f, 132, 10);
+        DrawSegments(c, usage, Size / 2f, 132, 10, gap: usage.Count > 3 ? 4 : 8);
         if (attention > 0) Border(c, waiting > 0 ? Waiting : Bad, 4);
         return Encode(s);
     }
@@ -291,7 +305,7 @@ public sealed class KeyRenderer
         return "data:image/png;base64," + Convert.ToBase64String(data.AsSpan());
     }
 
-    private static SKColor Accent(Provider p) => p switch { Provider.Claude => ClaudeAccent, Provider.Codex => CodexAccent, _ => CopilotAccent };
+    private static SKColor Accent(Provider p) => p switch { Provider.Claude => ClaudeAccent, Provider.Codex => CodexAccent, Provider.Antigravity => AntigravityAccent, _ => CopilotAccent };
     private static SKColor StatusColor(AgentState st) => st switch { AgentState.Working => Working, AgentState.Waiting => Waiting, AgentState.Error => Bad, AgentState.Idle => Idle, _ => Ended };
     private static SKColor Threshold(double pct, double warn, double bad) => pct >= bad ? Bad : pct >= warn ? Warn : Good;
 
@@ -399,7 +413,8 @@ public sealed class KeyRenderer
     private static string ShortModel(string? model)
     {
         if (string.IsNullOrEmpty(model)) return "";
-        var m = model.Replace("claude-", "").Replace("-20", "-");
+        var m = model.Replace("claude-", "").Replace("gemini-", "")
+            .Replace("Gemini ", "", StringComparison.OrdinalIgnoreCase).Replace(" (High)", " H").Replace(" (Medium)", " M").Replace(" (Low)", " L").Replace("-20", "-");
         var dash = m.IndexOf("-20", StringComparison.Ordinal);
         if (dash > 0) m = m[..dash];
         return m.Length > 14 ? m[..14] : m;

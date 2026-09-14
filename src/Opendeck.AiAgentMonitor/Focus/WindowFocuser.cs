@@ -7,7 +7,8 @@ namespace Opendeck.AiAgentMonitor.Focus;
 /// <summary>
 /// Brings the window that hosts an agent to the front on X11 (KDE): switches to its virtual desktop,
 /// un-minimizes, raises and focuses it, verifies the result and falls back to a KWin script when the
-/// window manager ignored the request. A Codex desktop-app window hidden to the tray is relaunched.
+/// window manager ignored the request. Codex desktop-app conversations are selected by deep link,
+/// which also restores an app window hidden to the tray.
 /// </summary>
 public static class WindowFocuser
 {
@@ -20,14 +21,14 @@ public static class WindowFocuser
     {
         try
         {
+            if (!await SelectAppThreadAsync(agent, dryRun, LaunchDetachedAsync)) return false;
             if (!dryRun) await TrySelectKonsoleTabAsync(agent);   // before matching: selecting the tab retitles the window
             var windows = await ListWindowsAsync();
             var win = Pick(agent, windows);
             if (win is null && agent.Host == "App" && !dryRun)
             {
-                // The Codex desktop app hides its window when "closed" to the tray; launching it again shows it.
-                Log.Info("Codex app window not mapped; relaunching the app to show it");
-                await LaunchDetachedAsync("chatgpt");
+                // The deep link may still be restoring the window from the tray or starting the app.
+                if (agent.Provider != Provider.Codex && !await LaunchDetachedAsync("chatgpt")) return false;
                 for (var i = 0; i < 12 && win is null; i++) { await Task.Delay(250); win = Pick(agent, await ListWindowsAsync()); }
             }
             if (win is null) { Log.Info($"No window found for {agent.Key}"); return false; }
@@ -36,6 +37,25 @@ public static class WindowFocuser
             return await ActivateAsync(win);
         }
         catch (Exception ex) { Log.Warn($"focus failed: {ex.Message}"); return false; }
+    }
+
+    /// <summary>
+    /// App threads share a PID and window title. Always send the selected session's link, even when
+    /// that window is already focused. A process launch confirms dispatch, not the renderer's route.
+    /// </summary>
+    internal static async Task<bool> SelectAppThreadAsync(AgentInfo agent, bool dryRun,
+        Func<string, string[], Task<bool>> launch)
+    {
+        if (agent.Provider != Provider.Codex || agent.Host != "App") return true;
+        // Only accept a thread ID, never arbitrary URI paths such as "new" or query parameters.
+        if (!Guid.TryParseExact(agent.SessionId, "D", out var threadId))
+        {
+            Log.Warn($"Cannot select app conversation for {agent.Key}: missing or invalid session ID");
+            return false;
+        }
+        var uri = $"codex://threads/{threadId:D}";
+        Log.Info($"{(dryRun ? "Would open" : "Opening")} app conversation {uri}");
+        return dryRun || await launch("chatgpt", [uri]);
     }
 
     /// <summary>True when the agent's window is the active (focused) window right now — and, in Konsole, its tab is the current one.</summary>
@@ -264,7 +284,7 @@ public static class WindowFocuser
         var tool = sep > 0 ? title[..sep] : null;
         var toolProject = sep > 0 ? title[(sep + 3)..] : null;
         if (toolProject is not null && toolProject.Equals(name, cmp))
-            return provider == Provider.Claude && tool!.Equals("Terminal", cmp) ? 40 : 30;
+            return provider is Provider.Claude or Provider.Antigravity && tool!.Equals("Terminal", cmp) ? 40 : 30;
         if (title.Equals(name, cmp) || title.StartsWith(name + " ", cmp) || title.StartsWith(name + "–", cmp))
             return 20;
         return title.Contains(name, cmp) ? 10 : 0;
@@ -337,11 +357,35 @@ public static class WindowFocuser
         return stdout;
     }
 
-    private static Task LaunchDetachedAsync(string file, params string[] args)
+    private static async Task<bool> LaunchDetachedAsync(string file, params string[] args)
     {
         var psi = new ProcessStartInfo(file) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
         foreach (var a in args) psi.ArgumentList.Add(a);
-        try { Process.Start(psi); } catch (Exception ex) { Log.Warn($"launch {file}: {ex.Message}"); }
-        return Task.CompletedTask;
+        try
+        {
+            var process = Process.Start(psi);
+            if (process is null) return false;
+            var completion = DrainAsync(process);
+            // A second instance forwards the URI and exits; a newly opened app stays running.
+            // Keep draining in the background so neither its pipes nor the deck event loop block.
+            return await Task.WhenAny(completion, Task.Delay(750)) != completion || await completion;
+        }
+        catch (Exception ex) { Log.Warn($"launch {file}: {ex.Message}"); return false; }
+
+        async Task<bool> DrainAsync(Process process)
+        {
+            using (process)
+            {
+                try
+                {
+                    await Task.WhenAll(process.StandardOutput.BaseStream.CopyToAsync(Stream.Null),
+                        process.StandardError.BaseStream.CopyToAsync(Stream.Null), process.WaitForExitAsync());
+                    if (process.ExitCode == 0) return true;
+                    Log.Warn($"launch {file} exited with code {process.ExitCode}");
+                }
+                catch (Exception ex) { Log.Warn($"launch {file}: {ex.Message}"); }
+                return false;
+            }
+        }
     }
 }

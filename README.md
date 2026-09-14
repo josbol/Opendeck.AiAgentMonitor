@@ -3,14 +3,15 @@
 Shows what your AI coding agents are doing on a stream deck (built for the Ulanzi D200X under
 [OpenDeck](https://github.com/nekename/OpenDeck), works on any OpenDeck device):
 
-- **Agent keys** — one running session per key, attention-first: Claude Code, Codex and GitHub Copilot (the CLI,
+- **Agent keys** — one running session per key, attention-first: Claude Code, Codex, Google Antigravity CLI and GitHub Copilot (the CLI,
   and the JetBrains plugin's chat, which runs the same engine), whether they run in Rider, a terminal or the Codex
   desktop app. Green = working, amber = *needs you* (permission
   prompt, question, dialog), red = *error* (the turn died on an API error: no model capacity, rate limit,
   auth), grey = idle. Shows project, host, elapsed time, model and context-window use.
-  **Press → the agent's window comes to the front** (in Konsole, the agent's tab is selected too).
+  **Press → the agent's window comes to the front** (in Konsole, the agent's tab is selected too;
+  in the ChatGPT/Codex desktop app, the selected conversation opens even when several share one window).
 - **Usage keys** — Claude (5 h / 7 d windows, Max/Pro), Codex (weekly / 5 h) and Copilot (monthly premium-request
-  budget) subscription usage with time-to-reset. Press → opens the usage page.
+  budget), plus Antigravity quota buckets from agy, with time-to-reset. Press → opens the usage page.
 - **Overview** — counts of working / waiting / idle agents, per provider, and each provider's usage. Press → jump to
   the agent that needs you.
 - **Attention → Monitor** — a small key for your *main* layout: lights up amber with the number of
@@ -43,12 +44,13 @@ Shows what your AI coding agents are doing on a stream deck (built for the Ulanz
 `wmctrl`/`xdotool` with a KWin fallback, so it needs X11 (Wayland sessions get everything except focusing); the
 profile generator targets the D200X layout — on other decks place the actions by hand. It relies on undocumented
 internals of Claude Code (session registry, transcripts, usage endpoint), Codex (rollouts, lock files, usage
-endpoint) and Copilot (session-state directory, usage endpoint), so a release of any of them can break a collector; the diagnostics below exist for exactly that.
+endpoint), Copilot (session-state directory, usage endpoint), and Antigravity CLI (the documented status-line feed), so a release of any of them can break a collector; the diagnostics below exist for exactly that.
 
 Everything is read locally; nothing is sent anywhere except the three usage requests that Claude Code, Codex
 and Copilot already make themselves (`api.anthropic.com/api/oauth/usage`, `chatgpt.com/backend-api/wham/usage`,
-`api.github.com/copilot_internal/user`), using the tokens they store. Monitoring needs no hooks; approving from the deck needs one `PermissionRequest`
-hook per tool (installed by `--install-hooks`, see below).
+`api.github.com/copilot_internal/user`), using the tokens they store. Claude/Codex/Copilot monitoring needs no hooks; approving from the deck needs one `PermissionRequest`
+hook per tool (installed by `--install-hooks`, see below). Antigravity monitoring uses its status-line command
+(`--install-antigravity-monitor`); this writes local status and quota observations without making permission decisions or using Google credentials.
 
 ![Keys rendered by the plugin](docs/keys.png)
 
@@ -67,8 +69,10 @@ hook per tool (installed by `--install-hooks`, see below).
 | Copilot sessions (the CLI, and the JetBrains plugin's chat — it spawns the same engine, `copilot-language-server --headless`, under the IDE), turn state, permission prompts, questions, model | `~/.copilot/session-state/<session>/events.jsonl` (`assistant.turn_start` / `turn_end`, `permission.requested` / `completed`, `tool.execution_*` for `ask_user`) + `workspace.yaml` (cwd, client, first prompt). The CLI's per-turn `session.usage_checkpoint` carries the last prompt size (`promptCacheBreakState[].models[*].prompt_tokens`, shown as `ctx 20k`); the context window itself is not recorded, so there is no percentage bar |
 | Copilot session liveness + owning process | `inuse.<pid>.lock` in the session directory (a pid file, gone when the process exits; checked via `/proc`). One agent per process: the JetBrains engine keeps earlier sessions of a chat open, the newest is shown |
 | Copilot usage | `GET https://api.github.com/copilot_internal/user` (`quota_snapshots.premium_interactions`, the call the IDE plugins make) with the gh CLI's login (`gh auth token` — the Copilot CLI signs in through gh too; `GH_TOKEN` / `COPILOT_GITHUB_TOKEN` win when set), falling back to the `oauth_token` entries in `~/.config/github-copilot/apps.json`, which go stale once a plugin moves to its encrypted store |
+| Antigravity CLI sessions, state, confirmations, model and context | `agy` invokes our status-line command with `conversation_id`, `cwd`, `agent_state`, `tool_confirmation_pending`, `model` and `context_window`. Sanitized observations are stored in `~/.gemini/antigravity-cli/aiagentmonitor/sessions/`; PID, process start ticks and Linux boot ID establish liveness. One current conversation per CLI process |
+| Antigravity usage | The same local feed provides quota buckets (`remaining_fraction`, `reset_time`) and plan tier. The usage key shows the most-consumed bucket; `/usage` in agy shows them all. Observations remain visible after exit and are marked stale as they age. No extra network calls or credentials |
 | "Inside Rider" vs terminal vs app | process ancestry of the agent process (`/proc`) |
-| Window focus | `wmctrl -lp` (window ↔ pid ↔ ancestry, prefers a detached "Terminal - Project" window, then the project window) → switch to its virtual desktop, `xdotool windowmap` (un-minimize), `wmctrl -ia` + `xdotool windowactivate/windowraise`, verified with `xdotool getactivewindow`; fallback: a one-shot KWin script over D-Bus (`workspace.activeWindow`); a Codex app window hidden to the tray is brought back by relaunching `chatgpt` |
+| Window focus | Codex app sessions first open `chatgpt codex://threads/<session-id>` to select the exact conversation (also restores the app from the tray). Then `wmctrl -lp` (window ↔ pid ↔ ancestry, prefers a detached "Terminal - Project" window, then the project window) → switch to its virtual desktop, `xdotool windowmap` (un-minimize), `wmctrl -ia` + `xdotool windowactivate/windowraise`, verified with `xdotool getactivewindow`; fallback: a one-shot KWin script over D-Bus (`workspace.activeWindow`). Verification confirms window activation; the app does not acknowledge conversation selection through the launcher |
 | Profile switching | `opendeck --process-message '{"event":"switchProfile",…}'` (plugins may not send it over the socket) |
 | Permission requests | Claude `PermissionRequest` hook of type `http` → `POST http://127.0.0.1:43117/hooks/claude`; Codex `PermissionRequest` command hook (`hooks/codex-hook.sh`, curl) → `/hooks/codex`. The plugin holds the request open until a deck press (default 30 s) and answers `{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"|"deny"}}}`; no press, timeout, or plugin not running → the normal dialog. Copilot CLI: `permissionRequest` command hook (`hooks/copilot-hook.sh` from `~/.copilot/hooks/aiagentmonitor.json`) → `/hooks/copilot`, answered `{"behavior":"allow"|"deny"}`. Copilot runs that hook *before* its own rule checks and auto-allow, so read requests are passed straight through (never held) and a shell command you have allow-listed still waits for the deck up to the hold time |
 | Codex approval routing | hooks run first; a hook that returns no decision falls through to the turn's `approvals_reviewer` (from the rollout's `turn_context`): `user` = the app/TUI prompts, `auto_review` (ChatGPT app auto mode) = the Guardian LLM decides silently — so auto-review requests are answered immediately instead of held |
@@ -91,6 +95,44 @@ OpenDeck ≥ 2.x with **developer mode** on if you install as a symlink.
 plugin/com.josbol.aiagentmonitor.sdPlugin/bin/linux-x64/opendeck-aiagentmonitor --install-hooks     # Claude + Codex + Copilot PermissionRequest hooks
 plugin/com.josbol.aiagentmonitor.sdPlugin/bin/linux-x64/opendeck-aiagentmonitor --uninstall-hooks
 ```
+
+### Enable Antigravity CLI monitoring
+
+This integration targets the interactive **Antigravity CLI**, launched with `agy`.
+It replaces the earlier Gemini CLI integration. After building or installing the updated plugin:
+
+```sh
+plugin/com.josbol.aiagentmonitor.sdPlugin/bin/linux-x64/opendeck-aiagentmonitor --install-antigravity-monitor
+# To restore your original status-line settings:
+plugin/com.josbol.aiagentmonitor.sdPlugin/bin/linux-x64/opendeck-aiagentmonitor --uninstall-antigravity-monitor
+```
+
+Requires `python3` and an agy version supporting the documented
+[status-line feed](https://antigravity.google/docs/cli/statusline/) (live-tested with agy 1.1.28).
+Start or restart `agy` after enabling it. The installer sets `statusLine` in
+`~/.gemini/antigravity-cli/settings.json`, preserves unrelated settings, saves the previous status-line configuration,
+and chains an existing custom command with the original input. With no custom command, the built-in status line
+stays visible. Re-running the installer preserves the original backup; uninstall restores it unless you have since
+selected another status line. Existing scripts retain their display output and have a two-second timeout.
+
+The installer also removes only the `aiagentmonitor-gemini` hooks previously installed in `~/.gemini/settings.json`.
+The `gemini` provider setting on an existing key remains an alias for Antigravity; new keys offer **Antigravity only**.
+The existing `--install-hooks` and `--uninstall-hooks` commands still apply only to Claude/Codex/Copilot.
+
+Antigravity conversations appear in the agent slots, dial, attention key and overview. Select **Antigravity** on a
+Usage key to show the most-consumed quota bucket and its reset time. Pressing that key opens the usage documentation;
+`/usage` inside agy shows all buckets. The feed works even with online usage fetching disabled and keeps updating
+while OpenDeck is closed. Only status, process identity, workspace path, model, context and quota fields are saved;
+email, prompts, credentials and transcript content are excluded.
+
+**Scope:** interactive `agy` only; the desktop app, IDE extension and `agy --print` mode are outside this integration.
+Monitoring begins when agy emits a conversation ID. Pending tool confirmations turn the key amber and clear as the
+confirmation flag changes. The status feed does not identify every question or expose a terminal error reason, so
+those are not inferred from inactivity. Permission decisions remain in agy: press the agent key to focus it.
+Deck Approve/Deny is not enabled for Antigravity. Context percentage and quota data are shown only when supplied
+by the CLI; a context token count represents its current input-token counter, not cumulative session usage.
+
+### Claude, Codex and Copilot approval hooks
 
 `--install-hooks` adds an `http` hook to `~/.claude/settings.json`, a `command` hook to `~/.codex/hooks.json`
 (backups are written, other hooks are kept) and writes `~/.copilot/hooks/aiagentmonitor.json` (Copilot loads every JSON
@@ -159,13 +201,13 @@ to you in the app), on-screen popup style (auto / dialog / notification / none) 
 ```
 src/Opendeck.AiAgentMonitor/
   Deck/        DeckClient (WebSocket protocol), DeckEvent
-  Collectors/  ClaudeSessionCollector, ClaudeUsageClient, CodexRolloutCollector, CodexUsageClient, CopilotSessionCollector, CopilotUsageClient
+  Collectors/  ClaudeSessionCollector, ClaudeUsageClient, CodexRolloutCollector, CodexUsageClient, CopilotSessionCollector, CopilotUsageClient, AntigravitySessionCollector
   Agents/      Model (AgentInfo, Snapshot, quotas), AgentMonitor (merges collectors, raises Changed)
   Actions/     PluginHost (event routing, rendering, profile switch), one class per action
   Rendering/   KeyRenderer (SkiaSharp, 144×144 PNG data URLs)
   Focus/       WindowFocuser (wmctrl / xdotool)
   Hooks/       HookServer (HttpListener; holds PermissionRequests), HookInstaller (settings.json / hooks.json / trust), ApprovalNotifier (kdialog / zenity / notify-send)
-plugin/com.josbol.aiagentmonitor.sdPlugin/   manifest, icons, property inspectors, fonts, hooks/codex-hook.sh + copilot-hook.sh + approval-dialog.py (+ bin/ after build)
+plugin/com.josbol.aiagentmonitor.sdPlugin/   manifest, icons, property inspectors, fonts, hooks/codex-hook.sh + copilot-hook.sh + antigravity-status.py + approval-dialog.py (+ bin/ after build)
 tests/Opendeck.AiAgentMonitor.Tests/           xunit tests (usage parsing, rollout rate limits, approvals, Codex trust hash, deck events)
 scripts/     build.sh, package.sh, install.sh, install-profile.py
 .github/     CI (build + test) and release (tag v* → zip attached to the GitHub release)

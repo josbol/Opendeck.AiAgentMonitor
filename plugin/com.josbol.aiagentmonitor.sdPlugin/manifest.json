@@ -1,6 +1,6 @@
 {
 	"Name": "AI Agent Monitor",
-	"Description": "Live status of Claude Code, Codex and GitHub Copilot sessions (working / needs you / idle), subscription usage, approve or deny permission requests from the deck, and one-press jump to the agent's window.",
+	"Description": "Live status of Claude Code, Codex, GitHub Copilot and Google Antigravity CLI sessions (working / needs you / idle), subscription usage for all four providers, deck approvals for Claude/Codex/Copilot, and one-press jump to the agent's window.",
 	"Author": "Jos Bol",
 	"Version": "0.3.0",
 	"Icon": "icons/plugin",
@@ -45,7 +45,7 @@
 		{
 			"UUID": "com.josbol.aiagentmonitor.quota",
 			"Name": "Usage",
-			"Tooltip": "Subscription usage windows (5h / 7d) for Claude or Codex, the monthly budget for Copilot. Press to open the usage page.",
+			"Tooltip": "Subscription usage windows (5h / 7d) for Claude or Codex, the monthly budget for Copilot, or Antigravity quota buckets from agy. Press to open the usage page (Antigravity: usage documentation).",
 			"Icon": "icons/quota",
 			"Controllers": [
 				"Keypad"

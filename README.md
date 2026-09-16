@@ -10,8 +10,9 @@ Shows what your AI coding agents are doing on a stream deck (built for the Ulanz
   auth), grey = idle. Shows project, host, elapsed time, model and context-window use.
   **Press → the agent's window comes to the front** (in Konsole, the agent's tab is selected too;
   in the ChatGPT/Codex desktop app, the selected conversation opens even when several share one window).
-- **Usage keys** — Claude (5 h / 7 d windows, Max/Pro), Codex (weekly / 5 h) and Copilot (monthly premium-request
-  budget), plus Antigravity quota buckets from agy, with time-to-reset. Press → opens the usage page.
+- **Usage keys** — Claude (5 h / 7 d windows, Max/Pro, plus the weekly Fable limit as a second ring: green below 80 %,
+  orange below 100 %, red when used up), Codex (weekly / 5 h) and Copilot (monthly premium-request budget), plus
+  Antigravity quota buckets from agy, with time-to-reset. Press → opens the usage page.
 - **Overview** — counts of working / waiting / idle agents, per provider, and each provider's usage. Press → jump to
   the agent that needs you.
 - **Attention → Monitor** — a small key for your *main* layout: lights up amber with the number of

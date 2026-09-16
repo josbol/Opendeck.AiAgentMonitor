@@ -43,6 +43,12 @@ public class UsageParsingTests
 
         // unknown / codenamed keys must be ignored
         Assert.Equal(3, windows.Count);
+
+        // the first ring and the footer use the unscoped windows; the second ring gets the scoped one
+        var quota = new ProviderQuota { Provider = Provider.Claude, Windows = windows, FetchedAt = DateTimeOffset.UtcNow };
+        Assert.Same(fiveHour, quota.Primary);
+        Assert.Same(weekly, quota.Secondary);
+        Assert.Same(scoped, quota.Scoped);
     }
 
     [Fact]

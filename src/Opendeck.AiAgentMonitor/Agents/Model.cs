@@ -83,6 +83,8 @@ public sealed record ProviderQuota
     public QuotaWindow? Primary => Short ?? Long ?? Windows.FirstOrDefault();
     /// <summary>A second window for the footer, when there is one distinct from <see cref="Primary"/>.</summary>
     public QuotaWindow? Secondary => Primary is { } p && Long is { } l && !ReferenceEquals(l, p) ? l : null;
+    /// <summary>A model-scoped weekly limit (Claude: Fable), shown as a second ring on the usage key.</summary>
+    public QuotaWindow? Scoped => Windows.FirstOrDefault(w => w.Label == "7d" && w.Scope is not null);
 }
 
 public sealed record Snapshot

@@ -153,17 +153,28 @@ public sealed class KeyRenderer
             return Encode(s);
         }
 
-        // ring
-        var center = new SKPoint(Size / 2f, 76);
-        const float radius = 38, stroke = 9;
-        var oval = new SKRect(center.X - radius, center.Y - radius, center.X + radius, center.Y + radius);
-        using (var ring = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = stroke, Color = Card, StrokeCap = SKStrokeCap.Round })
-            c.DrawArc(oval, -90, 360, false, ring);
+        // ring, or two side by side when there is a scoped weekly limit (Claude: Fable)
         var pct = Math.Clamp(primary.UsedPct, 0, 100);
-        using (var arc = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = stroke, Color = Threshold(pct, 50, 80), StrokeCap = SKStrokeCap.Round })
-            if (pct > 0.5) c.DrawArc(oval, -90, (float)(360 * pct / 100), false, arc);
-        DrawText(c, $"{pct:0}%", center.X, center.Y + 8, 24, Text, bold: true, align: SKTextAlign.Center);
-        DrawText(c, primary.Label + " used", center.X, center.Y + 22, 9, Muted, align: SKTextAlign.Center);
+        if (q!.Scoped is { } scoped)
+        {
+            void SmallRing(float cx, double used, SKColor color, string label)
+            {
+                const float radius = 27, stroke = 8, cy = 67;
+                Ring(c, new SKPoint(cx, cy), radius, stroke, used, color);
+                DrawSegments(c, new[] { ($"{used:0}%", Text) }, cx, cy + 5, 15, bold: true, maxWidth: 2 * radius - stroke - 8);   // shrinks to stay inside the ring
+                DrawFitted(c, label, cx, 112, 10, Muted, maxWidth: 2 * radius + 8);
+            }
+            var fable = Math.Clamp(Math.Round(scoped.UsedPct), 0, 100);   // colour follows the number shown
+            SmallRing(37, pct, Threshold(pct, 50, 80), primary.Label + " used");
+            SmallRing(Size - 37, fable, Threshold(fable, 80, 100), scoped.Scope + " used");   // green below 80 %, orange below 100 %, red when used up
+        }
+        else
+        {
+            var center = new SKPoint(Size / 2f, 76);
+            Ring(c, center, 38, 9, pct, Threshold(pct, 50, 80));
+            DrawText(c, $"{pct:0}%", center.X, center.Y + 8, 24, Text, bold: true, align: SKTextAlign.Center);
+            DrawText(c, primary.Label + " used", center.X, center.Y + 22, 9, Muted, align: SKTextAlign.Center);
+        }
 
         // footer
         var footer = secondary is not null ? $"{secondary.Label} {secondary.UsedPct:0}%" : "";
@@ -308,6 +319,16 @@ public sealed class KeyRenderer
     private static SKColor Accent(Provider p) => p switch { Provider.Claude => ClaudeAccent, Provider.Codex => CodexAccent, Provider.Antigravity => AntigravityAccent, _ => CopilotAccent };
     private static SKColor StatusColor(AgentState st) => st switch { AgentState.Working => Working, AgentState.Waiting => Waiting, AgentState.Error => Bad, AgentState.Idle => Idle, _ => Ended };
     private static SKColor Threshold(double pct, double warn, double bad) => pct >= bad ? Bad : pct >= warn ? Warn : Good;
+
+    /// <summary>A usage ring: the full track, then the used part clockwise from the top.</summary>
+    private static void Ring(SKCanvas c, SKPoint center, float radius, float stroke, double pct, SKColor color)
+    {
+        var oval = new SKRect(center.X - radius, center.Y - radius, center.X + radius, center.Y + radius);
+        using (var track = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = stroke, Color = Card, StrokeCap = SKStrokeCap.Round })
+            c.DrawArc(oval, -90, 360, false, track);
+        using var arc = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke, StrokeWidth = stroke, Color = color, StrokeCap = SKStrokeCap.Round };
+        if (pct > 0.5) c.DrawArc(oval, -90, (float)(360 * pct / 100), false, arc);
+    }
 
     private static void Fill(SKCanvas c, SKRect r, SKColor color)
     {

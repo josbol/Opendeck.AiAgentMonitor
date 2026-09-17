@@ -2,7 +2,7 @@
 	"Name": "AI Agent Monitor",
 	"Description": "Live status of Claude Code, Codex, GitHub Copilot and Google Antigravity CLI sessions (working / needs you / idle), subscription usage for all four providers, deck approvals for Claude/Codex/Copilot, and one-press jump to the agent's window.",
 	"Author": "Jos Bol",
-	"Version": "0.4.0",
+	"Version": "0.4.1",
 	"Icon": "icons/plugin",
 	"Category": "AI Agent Monitor",
 	"CategoryIcon": "icons/plugin",

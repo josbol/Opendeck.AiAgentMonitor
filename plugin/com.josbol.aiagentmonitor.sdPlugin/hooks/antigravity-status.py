@@ -10,9 +10,22 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
+
+
+def is_agy(pid, comm):
+    """agy's self-updater renames the running binary to agy.<nanos>.old (and may unlink
+    it), so the exe link stops ending in 'agy'; comm keeps the exec'd name either way."""
+    if comm == "agy":
+        return True
+    try:
+        name = Path(os.readlink(f"/proc/{pid}/exe")).name.removesuffix(" (deleted)")
+    except OSError:
+        return False  # a process we cannot inspect is never the owning agy
+    return name == "agy" or re.fullmatch(r"agy\.\d+\.old", name) is not None
 
 
 def owner():
@@ -20,9 +33,12 @@ def owner():
     for _ in range(32):
         if pid <= 1:
             break
-        stat = Path(f"/proc/{pid}/stat").read_text()
+        try:
+            stat = Path(f"/proc/{pid}/stat").read_text()
+        except OSError:
+            break  # an ancestor vanished or is another user's; the walk cannot continue
         fields = stat[stat.rfind(")") + 2:].split()
-        if Path(os.readlink(f"/proc/{pid}/exe")).name == "agy":
+        if is_agy(pid, stat[stat.find("(") + 1:stat.rfind(")")]):
             return pid, fields[19]
         pid = int(fields[1])
     return None

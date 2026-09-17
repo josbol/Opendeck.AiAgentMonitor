@@ -187,6 +187,38 @@ public sealed class AntigravityTests : IDisposable
         finally { if (!process.HasExited) { process.Kill(entireProcessTree: true); await process.WaitForExitAsync(); } }
     }
 
+    [Fact]
+    public async Task RealStatusCommandStillFindsAgyAfterTheSelfUpdaterRenamesTheRunningBinary()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        // agy's updater renames the running binary to agy.<nanos>.old and drops the new one in
+        // place, so /proc/<pid>/exe no longer ends in "agy" until the CLI is restarted.
+        var home = Path.Combine(_root, "updated", "antigravity-cli");
+        Directory.CreateDirectory(home);
+        HookInstaller.InstallAntigravity(home);
+        var command = JsonNode.Parse(File.ReadAllText(Path.Combine(home, "settings.json")))!["statusLine"]!["command"]!.GetValue<string>();
+        var fakeAgy = Path.Combine(_root, "agy");
+        File.Copy(new FileInfo("/usr/bin/python3").ResolveLinkTarget(true)?.FullName ?? "/usr/bin/python3", fakeAgy);
+        File.SetUnixFileMode(fakeAgy, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        var payload = """{"conversation_id":"updated-conversation","cwd":"/work/acme","agent_state":"thinking","model":{"id":"gemini-3.5-flash"}}""";
+        var psi = new ProcessStartInfo(fakeAgy) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+        psi.ArgumentList.Add("-c");
+        psi.ArgumentList.Add("import subprocess,sys,time; sys.stdin.readline(); p=subprocess.run(sys.argv[1],shell=True,input=sys.argv[2],text=True,capture_output=True); print('DONE',flush=True); time.sleep(20)");
+        psi.ArgumentList.Add(command); psi.ArgumentList.Add(payload);
+        psi.RedirectStandardInput = true;
+        using var process = Process.Start(psi)!;
+        try
+        {
+            File.Move(fakeAgy, Path.Combine(_root, "agy.1789675618547386321.old")); // the update lands while agy runs
+            await process.StandardInput.WriteLineAsync("go"); await process.StandardInput.FlushAsync();
+            Assert.Equal("DONE", await process.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(10)));
+            var collector = new AntigravitySessionCollector(home);
+            var a = Assert.Single(collector.Collect(DateTimeOffset.UtcNow));
+            Assert.Equal(process.Id, a.Pid); Assert.Equal(AgentState.Working, a.State);
+        }
+        finally { if (!process.HasExited) { process.Kill(entireProcessTree: true); await process.WaitForExitAsync(); } }
+    }
+
     private JsonObject State() => new()
     {
         ["session_id"] = "conversation-1", ["pid"] = Environment.ProcessId,

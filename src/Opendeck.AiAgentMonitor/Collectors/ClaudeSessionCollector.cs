@@ -185,7 +185,21 @@ public sealed class ClaudeSessionCollector
                 }
                 catch { }
             }
-            if (ctx is null && l.Contains("\"usage\"", StringComparison.Ordinal) && l.Contains("\"assistant\"", StringComparison.Ordinal))
+            // /compact drops the window back to the summary. Until the next turn reports usage,
+            // that size lives only in the boundary record and every usage below it is pre-compact.
+            if (ctx is null && l.Contains("\"compact_boundary\"", StringComparison.Ordinal))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(l);
+                    var r = doc.RootElement;
+                    if (r.Str("subtype") == "compact_boundary" && r.Obj("compactMetadata")?.Long("postTokens") is >= 0 and var post)
+                        ctx = post;
+                }
+                catch { }
+            }
+            // the model is read past a boundary too: it survives the compact, the token count does not
+            if ((ctx is null || model is null) && l.Contains("\"usage\"", StringComparison.Ordinal) && l.Contains("\"assistant\"", StringComparison.Ordinal))
             {
                 try
                 {
@@ -196,7 +210,7 @@ public sealed class ClaudeSessionCollector
                     if (usage is not null && doc.RootElement.Bool("isSidechain") != true && doc.RootElement.Bool("isApiErrorMessage") != true)
                     {
                         var u = usage.Value;
-                        ctx = (u.Long("input_tokens") ?? 0) + (u.Long("cache_creation_input_tokens") ?? 0) + (u.Long("cache_read_input_tokens") ?? 0);
+                        ctx ??= (u.Long("input_tokens") ?? 0) + (u.Long("cache_creation_input_tokens") ?? 0) + (u.Long("cache_read_input_tokens") ?? 0);
                         model ??= msg?.Str("model");
                     }
                 }
@@ -206,7 +220,7 @@ public sealed class ClaudeSessionCollector
             {
                 try { using var doc = JsonDocument.Parse(l); title = doc.RootElement.Str("title") ?? doc.RootElement.Str("aiTitle"); } catch { }
             }
-            if (ctx is not null && title is not null && newestTurnRecordSeen) break;
+            if (ctx is not null && model is not null && title is not null && newestTurnRecordSeen) break;
         }
 
         var window = ContextWindowOverride > 0 ? ContextWindowOverride : GuessContextWindow(model);

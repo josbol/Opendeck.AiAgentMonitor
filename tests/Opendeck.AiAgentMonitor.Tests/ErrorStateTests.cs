@@ -150,6 +150,48 @@ public class ErrorStateTests : IDisposable
         Assert.False(CodexRolloutCollector.EndsWithQuestion("  \n "));
     }
 
+    // ---- Claude: /compact resets the window before any new turn reports usage ---------------
+    // (shapes verified against a real compacted transcript, Claude Code 2.1.274, 2026-09-17)
+
+    private const string BigAssistant = """{"type":"assistant","isSidechain":false,"timestamp":"2026-09-17T23:41:39.000Z","message":{"model":"claude-opus-5","role":"assistant","usage":{"input_tokens":96,"cache_creation_input_tokens":31000,"cache_read_input_tokens":900000,"output_tokens":12},"content":[{"type":"text","text":"ok"}]}}""";
+    private const string CompactBoundary = """{"type":"system","subtype":"compact_boundary","isSidechain":false,"content":"Conversation compacted","level":"info","timestamp":"2026-09-17T23:43:51.000Z","compactMetadata":{"trigger":"manual","preTokens":931522,"postTokens":8891,"cumulativeDroppedTokens":922631,"durationMs":103257}}""";
+    private const string SummaryPrompt = """{"type":"user","isSidechain":false,"isCompactSummary":true,"timestamp":"2026-09-17T23:43:50.000Z","message":{"role":"user","content":"This session is being continued from a previous conversation..."}}""";
+    private const string SmallAssistant = """{"type":"assistant","isSidechain":false,"timestamp":"2026-09-17T23:50:00.000Z","message":{"model":"claude-opus-5","role":"assistant","usage":{"input_tokens":40,"cache_creation_input_tokens":9000,"cache_read_input_tokens":3000,"output_tokens":7},"content":[{"type":"text","text":"resumed"}]}}""";
+
+    [Fact]
+    public void CompactBoundarySupersedesThePreCompactUsage()
+    {
+        WriteTranscript(BigAssistant, CompactBoundary, SummaryPrompt);
+        WriteSession("idle", updatedAtMs: 3000);
+
+        var agent = Assert.Single(_collector.Collect(DateTimeOffset.UtcNow));
+        // the pre-compact turn reported 931096; only the boundary knows the window was reset
+        Assert.Equal(8891, agent.ContextTokens);
+        // the model survives the compact, so the percentage still uses the right window
+        Assert.Equal("claude-opus-5", agent.Model);
+        Assert.Equal(8891 / 2000.0, agent.ContextPct!.Value, 4);
+    }
+
+    [Fact]
+    public void FirstTurnAfterACompactTakesOverFromTheBoundary()
+    {
+        WriteTranscript(BigAssistant, CompactBoundary, SummaryPrompt, SmallAssistant);
+        WriteSession("idle", updatedAtMs: 4000);
+
+        var agent = Assert.Single(_collector.Collect(DateTimeOffset.UtcNow));
+        Assert.Equal(12040, agent.ContextTokens);
+    }
+
+    [Fact]
+    public void CompactBoundaryDoesNotAffectAnUncompactedSession()
+    {
+        WriteTranscript(GoodAssistant);
+        WriteSession("idle", updatedAtMs: 5000);
+
+        var agent = Assert.Single(_collector.Collect(DateTimeOffset.UtcNow));
+        Assert.Equal(1000, agent.ContextTokens);
+    }
+
     private void WriteSession(string status, long updatedAtMs)
     {
         var pid = Environment.ProcessId;
